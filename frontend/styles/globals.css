@@ -6,3 +6,27 @@ body {
   background-color: #0d1117;
   color: #f0f6fc;
 }
+
+/* Glassmorphism panel style */
+.glass-panel {
+  background: linear-gradient(135deg, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.04) 100%);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+/* Soft animated glow for tile selection */
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 12px rgba(76, 175, 80, 0.6), 0 0 24px rgba(76, 175, 80, 0.3); }
+  50%      { box-shadow: 0 0 24px rgba(76, 175, 80, 0.9), 0 0 48px rgba(76, 175, 80, 0.5); }
+}
+.tile-selected { animation: glow-pulse 1.6s ease-in-out infinite; }
+
+@keyframes float-up {
+  0%   { transform: translateY(0px)  scale(1);   opacity: 0; }
+  20%  { opacity: 1; }
+  100% { transform: translateY(-200px) scale(0.4); opacity: 0; }
+}
+.float-particle { animation: float-up 6s linear infinite; }
+

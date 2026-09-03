@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import ZenjongCanvas from "./components/ZenjongCanvas";
 import GameHUD from "./components/GameHUD";
 import InventoryModal from "./components/InventoryModal";
+import MapSelector from "./components/MapSelector";
+import ViewToggle from "./components/ViewToggle";
 import { useMahjongGame } from "../hooks/useMahjongGame";
 
 export interface PlayerInfo {
@@ -39,6 +41,9 @@ export default function Home() {
   const [gameOver, setGameOver] = useState(false);
   const [remainingTiles, setRemainingTiles] = useState(144);
   const [inventoryModalOpen, setInventoryModalOpen] = useState(false);
+  const [selectedMapId, setSelectedMapId] = useState<string>("temple_courtyard");
+  const [isDualCamera, setIsDualCamera] = useState(false);
+  const [mapSelectorOpen, setMapSelectorOpen] = useState(false);
 
   // Derive score from game state (simplified)
   const activeScore = gameState?.players?.get(room?.sessionId)?.score ?? 0;
@@ -130,7 +135,7 @@ export default function Home() {
         Project Zenjong - Multiplayer Mahjong
       </h1>
       <div className="relative">
-        <div className="w-full h-[600px] border border-gray-700 rounded-lg overflow-hidden">
+        <div className="w-full h-[600px] min-h-[500px] relative border border-gray-700 rounded-lg overflow-hidden">
           <ZenjongCanvas
             myTiles={sortedMyTiles}
             discardPile={discardPile}
@@ -157,6 +162,12 @@ export default function Home() {
           currentTurn={currentTurn}
           turnTimeLeft={turnTimeLeft}
           isMyTurn={isMyTurn}
+          selectedMapId={selectedMapId}
+          onSelectMap={setSelectedMapId}
+          onToggleCamera={setIsDualCamera}
+          mapSelectorOpen={mapSelectorOpen}
+          onOpenMapSelector={() => setMapSelectorOpen(true)}
+          onCloseMapSelector={() => setMapSelectorOpen(false)}
         />
         <InventoryModal
           isOpen={inventoryModalOpen}
