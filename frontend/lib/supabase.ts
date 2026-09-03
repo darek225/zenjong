@@ -1,14 +1,8 @@
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { createClient } from '@supabase/supabase-js';
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://jifvosqcxkohhvnfnbit.supabase.co';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_X4FLQupOnHzj5e82LzL6JQ_w7ACDIAH';
 
-// Always create a Supabase client; uses placeholders at build-time so API routes
-// have a non-null client. At runtime, requests will fail gracefully if env vars are invalid.
-const FALLBACK_URL = 'https://placeholder.supabase.co';
-const FALLBACK_KEY = 'placeholder-key';
+export const dynamic = 'force-dynamic';
 
-export const supabase: SupabaseClient = createClient(
-  SUPABASE_URL || FALLBACK_URL,
-  SUPABASE_ANON_KEY || FALLBACK_KEY
-);
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
