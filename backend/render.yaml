@@ -1,0 +1,23 @@
+# Render.com Blueprint for Zenjong Backend
+# Deploy via: Dashboard → New → Blueprint → Connect GitHub repo
+# This creates a Docker Web Service from backend/Dockerfile
+
+services:
+  - type: web
+    name: zenjong-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    region: oregon  # or frankfurt, singapore, ohio
+    plan: free
+    healthCheckPath: /
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "2567"
+    autoDeploy: true
+
+# Note: Render assigns a URL like https://zenjong-backend.onrender.com
+# For WebSocket, use wss://zenjong-backend.onrender.com
+# The free tier spins down after 15 min inactivity (cold start ~30s)

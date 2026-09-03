@@ -1,0 +1,62 @@
+"use client";
+
+import { useState } from "react";
+import { OrbitControls } from "@react-three/drei";
+import { ZenjongCanvas } from "../components/ZenjongCanvas";
+import { MahjongTile } from "../components/MahjongTile";
+
+export default function Home() {
+  const [clickedTiles, setClickedTiles] = useState<string[]>([]);
+  const [hoveredTiles, setHoveredTiles] = useState<Set<string>>(new Set());
+
+  const handleTileClick = (tileId: string) => {
+    setClickedTiles((prev) =>
+      prev.includes(tileId)
+        ? prev.filter((id) => id !== tileId)
+        : [...prev, tileId]
+    );
+  };
+
+  const handleTileHover = (tileId: string, isHovering: boolean) => {
+    setHoveredTiles((prev) => {
+      const next = new Set(prev);
+      if (isHovering) {
+        next.add(tileId);
+      } else {
+        next.delete(tileId);
+      }
+      return next;
+    });
+  };
+
+  return (
+    <main className="flex min-h-screen flex-col items-center justify-between p-24">
+      <h1 className="text-3xl font-bold">Project Zenjong - 3D Viewport</h1>
+      <div className="w-full h-[600px] border border-gray-700 rounded-lg overflow-hidden">
+        <ZenjongCanvas>
+          <MahjongTile
+            position={[0, 0, 0]}
+            rotation={[0, 0, 0]}
+            tileId="tile-1"
+            onClick={handleTileClick}
+            onHover={handleTileHover}
+          />
+          <MahjongTile
+            position={[2, 0, 0]}
+            rotation={[0, Math.PI / 4, 0]}
+            tileId="tile-2"
+            onClick={handleTileClick}
+            onHover={handleTileHover}
+          />
+          <MahjongTile
+            position={[4, 0, 0]}
+            rotation={[0, Math.PI / 2, 0]}
+            tileId="tile-3"
+            onClick={handleTileClick}
+            onHover={handleTileHover}
+          />
+        </ZenjongCanvas>
+      </div>
+    </main>
+  );
+}
