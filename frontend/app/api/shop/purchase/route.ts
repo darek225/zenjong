@@ -1,10 +1,17 @@
 import { NextResponse } from "next/server";
-import { supabase } from "../../../../lib/supabase";
+import { createClient } from "@supabase/supabase-js";
 
 export const dynamic = 'force-dynamic';
 
+function getSupabase() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://jifvosqcxkohhvnfnbit.supabase.co';
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_X4FLQupOnHzj5e82LzL6JQ_w7ACDIAH';
+  return createClient(url, key);
+}
+
 export async function POST(request: Request) {
   try {
+    const supabase = getSupabase();
     const body = await request.json();
     const { userId, itemId, currencyType } = body;
 
