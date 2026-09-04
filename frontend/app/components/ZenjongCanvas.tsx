@@ -93,6 +93,12 @@ export default function ZenjongCanvas({
         <AmbientParticles color={theme.palette.accent} count={150} radius={8} speed={0.3} size={0.1} />
       )}
 
+      {/* DEBUG: Add a large red box at [0,1,0] to verify rendering pipeline works */}
+      <mesh position={[0, 1, 0]}>
+        <boxGeometry args={[2, 2, 2]} />
+        <meshStandardMaterial color="red" opacity={0.3} transparent />
+      </mesh>
+
       {myTiles.map((tileId, index) => {
         const x = (index - (myTiles.length - 1) / 2) * 1.2;
         const isSelected = selectedTiles.includes(tileId);

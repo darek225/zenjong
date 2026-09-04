@@ -127,6 +127,14 @@ export default function Home() {
 
   // Sort my tiles for display
   const sortedMyTiles = sortTiles(myTiles);
+  
+  // Development fallback: generate mock tiles if not connected and no tiles from backend
+  const devMyTiles = isConnected ? sortedMyTiles : [
+    // Default 14 tiles for development when backend is unavailable
+    "DOT_1", "DOT_2", "DOT_3", "DOT_4", "DOT_5",
+    "BAM_1", "BAM_2", "BAM_3", "BAM_4", "BAM_5",
+    "WIND_EAST", "WIND_SOUTH", "WIND_WEST", "WIND_NORTH",
+  ];
 
   return (
     <main className="relative min-h-screen bg-gray-900 text-white p-4 overflow-hidden">
@@ -136,7 +144,7 @@ export default function Home() {
       <div className="relative">
         <div className="w-full h-[600px] min-h-[500px] relative border border-gray-700 rounded-lg overflow-hidden">
           <ZenjongCanvas
-            myTiles={sortedMyTiles}
+            myTiles={devMyTiles}
             discardPile={discardPile}
             selectedTiles={selectedTiles}
             onTileClick={handleTileClick}
