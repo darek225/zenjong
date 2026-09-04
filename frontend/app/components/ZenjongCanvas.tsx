@@ -59,7 +59,7 @@ export default function ZenjongCanvas({
     <Canvas
       ref={canvasRef}
       style={{ width: "100%", height: "600px" }}
-      camera={camera}
+      camera={camera as any}
       onCreated={({ gl }) => {
         gl.setClearColor(
           theme

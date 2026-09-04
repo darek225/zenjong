@@ -1,6 +1,6 @@
 "use client";
 
-import { ENVIRONMENTS } from "../lib/environments";
+import { ENVIRONMENTS } from "../../lib/environments";
 
 interface MapSelectorProps {
   isOpen: boolean;

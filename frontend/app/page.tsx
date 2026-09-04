@@ -5,7 +5,6 @@ import ZenjongCanvas from "./components/ZenjongCanvas";
 import GameHUD from "./components/GameHUD";
 import InventoryModal from "./components/InventoryModal";
 import MapSelector from "./components/MapSelector";
-import ViewToggle from "./components/ViewToggle";
 import { useMahjongGame } from "../hooks/useMahjongGame";
 
 export interface PlayerInfo {
@@ -144,6 +143,8 @@ export default function Home() {
             onTileHover={handleTileHover}
             isMyTurn={isMyTurn}
             discardTile={discardTile}
+            selectedMapId={selectedMapId}
+            isDualCamera={isDualCamera}
           />
         </div>
 
@@ -164,7 +165,7 @@ export default function Home() {
           isMyTurn={isMyTurn}
           selectedMapId={selectedMapId}
           onSelectMap={setSelectedMapId}
-          onToggleCamera={setIsDualCamera}
+          onToggleCamera={() => setIsDualCamera((prev) => !prev)}
           mapSelectorOpen={mapSelectorOpen}
           onOpenMapSelector={() => setMapSelectorOpen(true)}
           onCloseMapSelector={() => setMapSelectorOpen(false)}

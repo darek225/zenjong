@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useMemo } from "react";
 import { useFrame } from "@react-three/fiber";
 import { Mesh } from "three";
 import * as THREE from "three";
@@ -33,6 +33,25 @@ export default function MahjongTile({
   const previousHoverState = useRef(false);
   const baseY = position[1];
 
+  // Memoize geometry and materials to avoid re-instantiation every frame
+  const geometry = useMemo(() => new THREE.BoxGeometry(1, 1.5, 0.1), []);
+
+  const frontMaterial = useMemo(() => new THREE.MeshStandardMaterial({
+    map: faceUp ? generateTileTexture(tileType) : getTileBackTexture(),
+    roughness: 0.45,
+    metalness: 0.05,
+    emissive: selected ? new THREE.Color(0xffd700) : new THREE.Color(0x000000),
+    emissiveIntensity: selected ? 0.6 : 0.0,
+  }), [tileType, faceUp, selected]);
+
+  const sideMaterial = useMemo(() => new THREE.MeshStandardMaterial({
+    color: faceUp ? "#fdf6e3" : "#1f6e3a",
+    roughness: 0.6,
+    metalness: 0.1,
+    emissive: selected ? new THREE.Color(0xffd700) : new THREE.Color(0x000000),
+    emissiveIntensity: selected ? 0.2 : 0.0,
+  }), [faceUp, selected]);
+
   // Animation effect for hover and click states
   useFrame(() => {
     if (meshRef.current) {
@@ -45,7 +64,6 @@ export default function MahjongTile({
 
       meshRef.current.scale.x += (targetScale - meshRef.current.scale.x) * 0.15;
       meshRef.current.scale.y += (targetScale - meshRef.current.scale.y) * 0.15;
-      meshRef.current.scale.z += (targetScale - meshRef.current.scale.z) * 0.15;
       meshRef.current.scale.z += (targetDepth - meshRef.current.scale.z) * 0.15;
 
       if (isHovered) {
@@ -78,22 +96,6 @@ export default function MahjongTile({
     setIsHovered(false);
   };
 
-  const frontMaterial = new MeshStandardMaterial({
-    map: faceUp ? generateTileTexture(tileType) : getTileBackTexture(),
-    roughness: 0.45,
-    metalness: 0.05,
-    emissive: selected ? new THREE.Color(0xffd700) : new THREE.Color(0x000000),
-    emissiveIntensity: selected ? 0.6 : 0.0,
-  });
-
-  const sideMaterial = new MeshStandardMaterial({
-    color: faceUp ? "#fdf6e3" : "#1f6e3a",
-    roughness: 0.6,
-    metalness: 0.1,
-    emissive: selected ? new THREE.Color(0xffd700) : new THREE.Color(0x000000),
-    emissiveIntensity: selected ? 0.2 : 0.0,
-  });
-
   return (
     <mesh
       ref={meshRef}
@@ -103,7 +105,7 @@ export default function MahjongTile({
       onPointerOver={handlePointerOver}
       onPointerOut={handlePointerOut}
     >
-      <primitive attach="geometry" object={new THREE.BoxGeometry(1, 1.5, 0.1)} />
+      <primitive attach="geometry" object={geometry} />
       <meshStandardMaterial
         attach="material-0"
         color="#fdf6e3"

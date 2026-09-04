@@ -2,7 +2,7 @@
 
 import * as THREE from "three";
 import { useMemo } from "react";
-import { MapTheme } from "../../lib/environments";
+import { MapTheme } from "../../../lib/environments";
 
 interface EnvironmentStageProps {
   theme: MapTheme;
