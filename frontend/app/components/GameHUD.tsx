@@ -12,7 +12,8 @@ export interface PlayerHUDInfo {
   isMe: boolean;
 }
 
-interface GameHUDProps {
+export interface GameHUDProps {
+  hudState: "MENU" | "IN_GAME" | "MAP_SELECT" | "LOBBY";
   remainingTiles: number;
   activeScore: number;
   timeRemaining: number;
@@ -32,6 +33,20 @@ interface GameHUDProps {
   mapSelectorOpen: boolean;
   onOpenMapSelector: () => void;
   onCloseMapSelector: () => void;
+  currentCameraPreset?: "classic" | "minimal" | "zen";
+  onCameraPresetChange?: (preset: string) => void;
+  isMuted?: boolean;
+  onToggleMute?: () => void;
+  tileSet?: string;
+  onTileSetChange?: (set: string) => void;
+  onStartGame?: () => void;
+  onCreateRoom?: () => void;
+  onJoinRoom?: (code: string) => void;
+  onQuickMatch?: () => void;
+  onLeaveLobby?: () => void;
+  onToggleReady?: () => void;
+  lobbyPlayers?: { username: string; isReady: boolean }[];
+  roomCode?: string;
 }
 export default function GameHUD(props: GameHUDProps) {
   const {

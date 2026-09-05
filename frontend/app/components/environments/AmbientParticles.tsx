@@ -67,9 +67,7 @@ export default function AmbientParticles({
       <bufferGeometry>
         <bufferAttribute
           attach="attributes-position"
-          count={count}
-          array={new Float32Array(positions.current!)}
-          itemSize={3}
+          args={[new Float32Array(positions.current!), 3]}
         />
       </bufferGeometry>
       <pointsMaterial

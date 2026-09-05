@@ -1,17 +1,14 @@
-import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
 
 export const dynamic = 'force-dynamic';
 
-function getSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://jifvosqcxkohhvnfnbit.supabase.co';
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_X4FLQupOnHzj5e82LzL6JQ_w7ACDIAH';
-  return createClient(url, key);
-}
-
 export async function POST(request: Request) {
   try {
-    const supabase = getSupabase();
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://jifvosqcxkohhvnfnbit.supabase.co';
+    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_X4FLQupOnHzj5e82LzL6JQ_w7ACDIAH';
+    const supabase = createClient(url, key);
+
     const body = await request.json();
     const { userId, itemId, currencyType } = body;
 
@@ -94,11 +91,7 @@ export async function POST(request: Request) {
       user: updatedUser,
       purchasedItem: item,
     });
-  } catch (error) {
-    console.error("Error processing purchase:", error);
-    return NextResponse.json(
-      { error: "Failed to process purchase" },
-      { status: 500 }
-    );
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message || 'Failed to process purchase' }, { status: 500 });
   }
 }

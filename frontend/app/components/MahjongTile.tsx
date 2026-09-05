@@ -5,6 +5,7 @@ import { useFrame } from "@react-three/fiber";
 import { Mesh } from "three";
 import * as THREE from "three";
 import { TileType, generateTileTexture, getTileBackTexture } from "../../lib/tileTextures";
+import { createBeveledBox } from "../../lib/beveledBox";
 
 interface MahjongTileProps {
   position: [number, number, number];
@@ -34,50 +35,69 @@ export default function MahjongTile({
   const baseY = position[1];
 
   // Memoize geometry and materials to avoid re-instantiation every frame
-  const geometry = useMemo(() => new THREE.BoxGeometry(1, 1.5, 0.1), []);
+  // Chunky beveled 3D box geometry with chamfered edges
+  // Tile size per arcade spec: width 1.2, height 1.6, depth 0.5
+  const geometry = useMemo(
+    () => createBeveledBox(1.2, 1.6, 0.5, 0.07, 1),
+    []
+  );
 
-  const frontMaterial = useMemo(() => new THREE.MeshStandardMaterial({
-    map: faceUp ? generateTileTexture(tileType) : getTileBackTexture(),
-    roughness: 0.45,
-    metalness: 0.05,
-    emissive: selected ? new THREE.Color(0xffd700) : new THREE.Color(0x000000),
-    emissiveIntensity: selected ? 0.6 : 0.0,
-  }), [tileType, faceUp, selected]);
+  // Front face material with high-contrast texture and gold emissive on selection
+  const frontMaterial = useMemo(
+    () =>
+      new THREE.MeshPhysicalMaterial({
+        map: faceUp ? generateTileTexture(tileType) : getTileBackTexture(),
+        roughness: 0.25,
+        metalness: 0.1,
+        clearcoat: 0.3,
+        clearcoatRoughness: 0.2,
+        emissive: selected
+          ? new THREE.Color(0xffd700)
+          : new THREE.Color(0x000000),
+        emissiveIntensity: selected ? 0.85 : 0.0,
+      }),
+    [tileType, faceUp, selected]
+  );
 
-  const sideMaterial = useMemo(() => new THREE.MeshStandardMaterial({
-    color: faceUp ? "#fdf6e3" : "#1f6e3a",
-    roughness: 0.6,
-    metalness: 0.1,
-    emissive: selected ? new THREE.Color(0xffd700) : new THREE.Color(0x000000),
-    emissiveIntensity: selected ? 0.2 : 0.0,
-  }), [faceUp, selected]);
+  // Side material with ivory tone and gold edge glow
+  const sideMaterial = useMemo(
+    () =>
+      new THREE.MeshPhysicalMaterial({
+        color: faceUp ? "#fdf6e3" : "#1f6e3a",
+        roughness: 0.25,
+        metalness: 0.1,
+        clearcoat: 0.3,
+        clearcoatRoughness: 0.2,
+        emissive: selected
+          ? new THREE.Color(0xffd700)
+          : new THREE.Color(0x000000),
+        emissiveIntensity: selected ? 0.35 : 0.0,
+      }),
+    [faceUp, selected]
+  );
 
-  // Animation effect for hover and click states
+  // Animation effect for hover and click states - reuses Three.js vectors
   useFrame(() => {
-    if (meshRef.current) {
-      const targetY = isHovered ? baseY + 0.3 : baseY;
-      const targetScale = isHovered ? 1.15 : 1.0;
-      const targetDepth = isClicked ? 0.15 : 0.1;
+    if (!meshRef.current) return;
 
-      const currentY = meshRef.current.position.y;
-      meshRef.current.position.y = currentY + (targetY - currentY) * 0.15;
+    const targetY = isHovered ? baseY + 0.35 : baseY;
+    const targetScale = isHovered ? 1.12 : 1.0;
+    const targetDepth = isClicked ? 0.12 : 0.1;
 
-      meshRef.current.scale.x += (targetScale - meshRef.current.scale.x) * 0.15;
-      meshRef.current.scale.y += (targetScale - meshRef.current.scale.y) * 0.15;
-      meshRef.current.scale.z += (targetDepth - meshRef.current.scale.z) * 0.15;
+    // Reuse meshRef properties directly to avoid allocations
+    meshRef.current.position.y += (targetY - meshRef.current.position.y) * 0.15;
+    meshRef.current.scale.x += (targetScale - meshRef.current.scale.x) * 0.15;
+    meshRef.current.scale.y += (targetScale - meshRef.current.scale.y) * 0.15;
+    meshRef.current.scale.z += (targetDepth - meshRef.current.scale.z) * 0.15;
 
-      if (isHovered) {
-        meshRef.current.rotation.x += (0.1 - meshRef.current.rotation.x) * 0.1;
-      } else {
-        meshRef.current.rotation.x += (0 - meshRef.current.rotation.x) * 0.1;
-      }
+    // Smooth rotation animation
+    const targetRotX = isHovered ? 0.08 : 0;
+    meshRef.current.rotation.x += (targetRotX - meshRef.current.rotation.x) * 0.1;
 
-      if (isHovered !== previousHoverState.current) {
-        previousHoverState.current = isHovered;
-        if (onHover) {
-          onHover(tileId, isHovered);
-        }
-      }
+    // Hover state change callback (only fires on transitions)
+    if (isHovered !== previousHoverState.current) {
+      previousHoverState.current = isHovered;
+      onHover?.(tileId, isHovered);
     }
   });
 
@@ -90,10 +110,12 @@ export default function MahjongTile({
 
   const handlePointerOver = () => {
     setIsHovered(true);
+    document.body.style.cursor = "pointer";
   };
 
   const handlePointerOut = () => {
     setIsHovered(false);
+    document.body.style.cursor = "auto";
   };
 
   return (
@@ -101,6 +123,8 @@ export default function MahjongTile({
       ref={meshRef}
       position={position}
       rotation={rotation}
+      castShadow
+      receiveShadow
       onClick={handleClick}
       onPointerOver={handlePointerOver}
       onPointerOut={handlePointerOut}
@@ -112,7 +136,7 @@ export default function MahjongTile({
         roughness={0.6}
         metalness={0.1}
         emissive={selected ? new THREE.Color(0xffd700) : new THREE.Color(0x000000)}
-        emissiveIntensity={selected ? 0.2 : 0.0}
+        emissiveIntensity={selected ? 0.3 : 0.0}
       />
       <meshStandardMaterial
         attach="material-1"
@@ -120,7 +144,7 @@ export default function MahjongTile({
         roughness={0.6}
         metalness={0.1}
         emissive={selected ? new THREE.Color(0xffd700) : new THREE.Color(0x000000)}
-        emissiveIntensity={selected ? 0.2 : 0.0}
+        emissiveIntensity={selected ? 0.3 : 0.0}
       />
       <meshStandardMaterial
         attach="material-2"
@@ -128,7 +152,7 @@ export default function MahjongTile({
         roughness={0.6}
         metalness={0.1}
         emissive={selected ? new THREE.Color(0xffd700) : new THREE.Color(0x000000)}
-        emissiveIntensity={selected ? 0.2 : 0.0}
+        emissiveIntensity={selected ? 0.3 : 0.0}
       />
       <meshStandardMaterial
         attach="material-3"
@@ -136,7 +160,7 @@ export default function MahjongTile({
         roughness={0.6}
         metalness={0.1}
         emissive={selected ? new THREE.Color(0xffd700) : new THREE.Color(0x000000)}
-        emissiveIntensity={selected ? 0.2 : 0.0}
+        emissiveIntensity={selected ? 0.3 : 0.0}
       />
       <primitive attach="material-4" object={frontMaterial} />
       <primitive attach="material-5" object={sideMaterial} />

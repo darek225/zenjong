@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import ZenjongCanvas from "./components/ZenjongCanvas";
+import dynamic from "next/dynamic";
+
+const ZenjongCanvas = dynamic(() => import("./components/ZenjongCanvas"), { ssr: false });
 import GameHUD from "./components/GameHUD";
 import InventoryModal from "./components/InventoryModal";
 import MapSelector from "./components/MapSelector";
@@ -158,6 +160,7 @@ export default function Home() {
 
         {/* Game HUD Overlay */}
         <GameHUD
+          hudState="IN_GAME"
           remainingTiles={remainingTiles}
           activeScore={activeScore}
           timeRemaining={displayTimeRemaining}
