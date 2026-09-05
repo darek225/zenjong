@@ -32,10 +32,11 @@ const getWebSocketEndpoint = (): string | null => {
 /**
  * Create a Colyseus client with centralized environment configuration
  * Uses NEXT_PUBLIC_COLYSEUS_URL for production deployment with graceful fallbacks
+ * Returns null if no WebSocket endpoint is configured (enables single-player fallback)
  */
-export const createColyseusClient = (): Client => {
+export const createColyseusClient = (): Client | null => {
   if (typeof window === "undefined") {
-    throw new Error("Colyseus client cannot be created during SSR");
+    return null; // SSR: return null, handle in hook
   }
 
   // Use centralized config with fallback strategy
@@ -44,10 +45,10 @@ export const createColyseusClient = (): Client => {
     url = getWebSocketEndpoint();
   }
   if (!url) {
-    const msg = "No WebSocket endpoint configured. Set NEXT_PUBLIC_SOCKET_URL to enable multiplayer.";
-    Config.showConnectionToast?.(msg);
-    Config.recordConnectionError?.(msg, "unconfigured");
-    throw new Error(msg);
+    // No WebSocket endpoint configured - enable single-player mode
+    console.info("[Config] No WebSocket endpoint configured. Running in single-player mode.");
+    Config.recordConnectionError?.("Single-player mode active (no multiplayer server)", "disabled");
+    return null;
   }
 
   console.info(`[Config] Connecting to WebSocket: ${url}`);

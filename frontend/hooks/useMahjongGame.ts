@@ -39,6 +39,19 @@ export const useMahjongGame = () => {
       if (!isMounted) return;
       try {
         const client = createColyseusClient();
+        if (!client) {
+          // Single-player mode — no WebSocket server configured
+          if (!isMounted) return;
+          setIsConnected(false);
+          setRoom(null);
+          setMyTiles([]);
+          setCurrentTurn(null);
+          setTurnTimeLeft(0);
+          setDiscardPile([]);
+          setPlayerBalances({});
+          setIsMyTurn(false);
+          return;
+        }
         clientRef.current = client;
 
         const joinedRoom = await joinRoomWithRetry(client, "mahjong_room");
