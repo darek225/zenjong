@@ -2,7 +2,13 @@
 
 import { Client } from "colyseus.js";
 
-const COLYSEUS_URL = "http://localhost:2567";
+// Use environment variable with fallback for local development
+// In production, NEXT_PUBLIC_COLYSEUS_URL should be set to the production WebSocket server
+const COLYSEUS_URL =
+  process.env.NEXT_PUBLIC_COLYSEUS_URL ||
+  (typeof window !== "undefined" && window.location.hostname !== "localhost"
+    ? "wss://zenjong-backend.onrender.com"
+    : "http://localhost:2567");
 
 export const createColyseusClient = (): Client => {
   if (typeof window === "undefined") {

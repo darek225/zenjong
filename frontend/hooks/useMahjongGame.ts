@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { createColyseusClient } from "../lib/colyseus";
 
 export const useMahjongGame = () => {
@@ -14,44 +14,74 @@ export const useMahjongGame = () => {
   const [turnTimeLeft, setTurnTimeLeft] = useState<number>(0);
   const [discardPile, setDiscardPile] = useState<string[]>([]);
   const [playerBalances, setPlayerBalances] = useState<Record<string, any>>({});
+  const roomRef = useRef<any>(null);
+
+  // Keep roomRef in sync with the room state for cleanup access
+  useEffect(() => {
+    roomRef.current = room;
+  }, [room]);
 
   useEffect(() => {
-    const client = createColyseusClient();
+    let client: ReturnType<typeof createColyseusClient> | null = null;
+    let isMounted = true;
 
-    // Join or create room on "mahjong_room"
-    client
-      .joinOrCreate("mahjong_room")
-      .then((joinedRoom) => {
+    const connect = async () => {
+      try {
+        client = createColyseusClient();
+
+        const joinedRoom = await client.joinOrCreate("mahjong_room");
+        if (!isMounted) return;
+
         console.log("Joined room:", joinedRoom.roomId);
         setRoom(joinedRoom);
         setIsConnected(true);
 
         // Setup room state synchronization listeners
         joinedRoom.onStateChange((state: any) => {
+          if (!isMounted) return;
           setGameState(state);
+
+          // Guard against null/undefined state properties
+          if (!state || !state.players) {
+            setMyTiles([]);
+            setCurrentTurn(null);
+            setTurnTimeLeft(0);
+            setDiscardPile([]);
+            setPlayerBalances({});
+            setIsMyTurn(false);
+            return;
+          }
+
           // Update my hand if I'm in this room
           const myPlayer = state.players.get(joinedRoom.sessionId);
-          if (myPlayer) {
+          if (myPlayer && myPlayer.hand) {
             setMyTiles(myPlayer.hand.map((t: any) => t.id));
+          } else {
+            setMyTiles([]);
           }
+
           // Update current active player
           setCurrentTurn(state.currentTurn || null);
           // Update turn timer
           setTurnTimeLeft(state.turnState?.timeLeft ?? 0);
-          // Update discard pile
-          setDiscardPile(
-            state.discardPile.tiles.map((t: any) => t.id)
-          );
+          // Update discard pile — guard against null/undefined
+          if (state.discardPile && state.discardPile.tiles) {
+            setDiscardPile(state.discardPile.tiles.map((t: any) => t.id));
+          } else {
+            setDiscardPile([]);
+          }
           // Update player balances (if available on player schema)
           const balances: Record<string, any> = {};
-          for (const [sessionId, player] of state.players.entries()) {
-            const balancesObj: any = {};
-            if (player.jadeBalance !== undefined)
-              balancesObj.jadeBalance = player.jadeBalance;
-            if (player.pearlBalance !== undefined)
-              balancesObj.pearlBalance = player.pearlBalance;
-            if (Object.keys(balancesObj).length > 0) {
-              balances[sessionId] = balancesObj;
+          if (state.players) {
+            for (const [sessionId, player] of state.players.entries()) {
+              const balancesObj: any = {};
+              if (player.jadeBalance !== undefined)
+                balancesObj.jadeBalance = player.jadeBalance;
+              if (player.pearlBalance !== undefined)
+                balancesObj.pearlBalance = player.pearlBalance;
+              if (Object.keys(balancesObj).length > 0) {
+                balances[sessionId] = balancesObj;
+              }
             }
           }
           setPlayerBalances(balances);
@@ -72,16 +102,28 @@ export const useMahjongGame = () => {
         joinedRoom.onMessage("tile-played", (message: any) => {
           console.log("Tile played message:", message);
         });
-      })
-      .catch((error) => {
+      } catch (error) {
         console.error("Failed to join room:", error);
-        setIsConnected(false);
-      });
+        if (isMounted) {
+          setIsConnected(false);
+        }
+      }
+    };
+
+    connect();
 
     // Cleanup function
     return () => {
-      if (room) {
-        room.leave();
+      isMounted = false;
+      // Note: colyseus.js Client has no `close()` method; rooms must be left
+      // individually. The room is stored in `roomRef` so we can call leave() on it.
+      if (roomRef.current) {
+        try {
+          roomRef.current.leave?.();
+        } catch (err) {
+          console.warn("Error leaving room on cleanup:", err);
+        }
+        roomRef.current = null;
       }
     };
   }, []); // Empty deps means run once on mount

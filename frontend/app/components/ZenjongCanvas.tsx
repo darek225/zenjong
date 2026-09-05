@@ -40,6 +40,73 @@ const CAMERA_PRESETS: Record<string, { position: [number, number, number]; fov: 
  * - Double-tap reset (quickly tap twice to reset camera)
  * - Ghost click prevention (block single-finger taps during pan/zoom gestures)
  */
+/**
+ * WebGL context loss recovery handler.
+ * Listens for `webglcontextlost` and `webglcontextrestored` events
+ * on the canvas element and triggers a re-render to prevent white-screen crashes.
+ */
+function WebGLContextLossHandler() {
+  const { gl } = useThree();
+  const [contextLost, setContextLost] = useState(false);
+
+  useEffect(() => {
+    const canvas = gl.domElement;
+    let lostTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const handleContextLost = (e: Event) => {
+      e.preventDefault();
+      console.warn("[WebGL] Context lost — pausing render loop");
+      setContextLost(true);
+    };
+
+    const handleContextRestored = () => {
+      console.info("[WebGL] Context restored — reinitializing textures");
+      // Give the browser a moment to recreate the context before re-enabling
+      lostTimer = setTimeout(() => {
+        setContextLost(false);
+        // Force a resize to ensure the renderer picks up the correct canvas size
+        gl.setSize(window.innerWidth, window.innerHeight);
+      }, 500);
+    };
+
+    canvas.addEventListener("webglcontextlost", handleContextLost);
+    canvas.addEventListener("webglcontextrestored", handleContextRestored);
+
+    return () => {
+      canvas.removeEventListener("webglcontextlost", handleContextLost);
+      canvas.removeEventListener("webglcontextrestored", handleContextRestored);
+      if (lostTimer) clearTimeout(lostTimer);
+    };
+  }, [gl]);
+
+  // Render a fallback overlay when context is lost
+  if (contextLost) {
+    return (
+      <div
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          width: "100%",
+          height: "100%",
+          background: "rgba(0, 0, 0, 0.85)",
+          color: "#fff",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          flexDirection: "column",
+          gap: "12px",
+          zIndex: 1000,
+        }}
+      >
+        <span>WebGL context lost. Restoring…</span>
+      </div>
+    );
+  }
+
+  return null;
+}
+
 function TouchGestureHandler() {
   const { gl, camera } = useThree();
 
@@ -243,80 +310,82 @@ export default function ZenjongCanvas({
     : { position: [0, 5, 8], fov: 50 };
 
   if (!isClient) {
-    return <div style={{ width: "100%", height: "600px" }} />;
+    return <div className="w-full h-screen relative" />;
   }
 
   return (
-    <Canvas
-      ref={canvasRef}
-      style={{ width: "100%", height: "600px" }}
-      camera={cameraConfig as any}
-      onCreated={({ gl }) => {
-        gl.setClearColor(
-          theme ? parseInt(theme.palette.background.slice(1), 16) : 0x1a1a1a
-        );
-        gl.shadowMap.enabled = true;
-        gl.shadowMap.type = THREE.PCFSoftShadowMap;
-        gl.toneMapping = ACESFilmicToneMapping;
-        gl.toneMappingExposure = 1.2;
-      }}
-      gl={{ antialias: true }}
-      dpr={[1, 2]}
-      shadows={{ type: THREE.PCFSoftShadowMap }}
-    >
-      <CameraPresetHandler onCameraPresetChange={onCameraPresetChange} />
-      <TouchGestureHandler />
-      {triggerShake && triggerShake > 0 && <ShakeEffect intensity={triggerShake} />}
+    <div className="w-full h-screen relative">
+      <Canvas
+        ref={canvasRef}
+        camera={cameraConfig as any}
+        onCreated={({ gl }) => {
+          gl.setClearColor(
+            theme ? parseInt(theme.palette.background.slice(1), 16) : 0x1a1a1a
+          );
+          gl.shadowMap.enabled = true;
+          gl.shadowMap.type = THREE.PCFSoftShadowMap;
+          gl.toneMapping = ACESFilmicToneMapping;
+          gl.toneMappingExposure = 1.2;
+        }}
+        gl={{ antialias: true }}
+        dpr={[1, 2]}
+        shadows={{ type: THREE.PCFSoftShadowMap }}
+      >
+        <WebGLContextLossHandler />
+        <CameraPresetHandler onCameraPresetChange={onCameraPresetChange} />
+        <TouchGestureHandler />
+        {triggerShake && triggerShake > 0 && <ShakeEffect intensity={triggerShake} />}
 
-      <ambientLight intensity={0.3} />
-      <directionalLight position={[0, 12, 0]} intensity={1.8} castShadow shadow-map-size-width={2048} shadow-map-size-height={2048} shadow-camera-near={0.5} shadow-camera-far={50} shadow-camera-top={10} shadow-camera-bottom={-10} shadow-camera-left={-10} shadow-camera-right={10} shadow-bias={-0.0001} />
-      <directionalLight position={[5, 8, 5]} intensity={0.6} />
-      <directionalLight position={[-3, 6, -3]} intensity={0.4} color="#ffd700" />
+        <ambientLight intensity={0.3} />
+        <directionalLight position={[0, 12, 0]} intensity={1.8} castShadow shadow-map-size-width={2048} shadow-map-size-height={2048} shadow-camera-near={0.5} shadow-camera-far={50} shadow-camera-top={10} shadow-camera-bottom={-10} shadow-camera-left={-10} shadow-camera-right={10} shadow-bias={-0.0001} />
+        <directionalLight position={[5, 8, 5]} intensity={0.6} />
+        <directionalLight position={[-3, 6, -3]} intensity={0.4} color="#ffd700" />
 
-      {theme && <EnvironmentStage theme={theme} />}
+        {theme && <EnvironmentStage theme={theme} />}
 
-      <ContactShadows position={[0, -1.2, 0]} opacity={0.6} scale={20} blur={2} far={4} resolution={256} color="#000000" />
+        <ContactShadows position={[0, -1.2, 0]} opacity={0.6} scale={20} blur={2} far={4} resolution={256} color="#000000" />
 
-      {theme && theme.hasFlames && (
-        <>
-          <BrazierFlames position={[-1, -0.2, 0.8]} size={0.4} color={theme.palette.accent} />
-          <BrazierFlames position={[1, -0.2, 0.8]} size={0.4} color={theme.palette.accent} />
-          <BrazierFlames position={[-1, -0.2, -0.8]} size={0.4} color={theme.palette.accent} />
-          <BrazierFlames position={[1, -0.2, -0.8]} size={0.4} color={theme.palette.accent} />
-        </>
-      )}
+        {theme && theme.hasFlames && (
+          <>
+            <BrazierFlames position={[-1, -0.2, 0.8]} size={0.4} color={theme.palette.accent} />
+            <BrazierFlames position={[1, -0.2, 0.8]} size={0.4} color={theme.palette.accent} />
+            <BrazierFlames position={[-1, -0.2, -0.8]} size={0.4} color={theme.palette.accent} />
+            <BrazierFlames position={[1, -0.2, -0.8]} size={0.4} color={theme.palette.accent} />
+          </>
+        )}
 
-      {theme && theme.hasSpotlights && (
-        <>
-          <SpotlightBeams position={[-2, 5, -2]} height={6} angle={0.4} color="#fff176" />
-          <SpotlightBeams position={[2, 5, -2]} height={6} angle={0.4} color="#fff176" />
-        </>
-      )}
+        {theme && theme.hasSpotlights && (
+          <>
+            <SpotlightBeams position={[-2, 5, -2]} height={6} angle={0.4} color="#fff176" />
+            <SpotlightBeams position={[2, 5, -2]} height={6} angle={0.4} color="#fff176" />
+          </>
+        )}
 
-      {theme && <AmbientParticles color={theme.palette.accent} count={150} radius={8} speed={0.3} size={0.1} />}
+        {theme && <AmbientParticles color={theme.palette.accent} count={150} radius={8} speed={0.3} size={0.1} />}
 
-      {myTiles.map((tileId, index) => {
-        const x = (index - (myTiles.length - 1) / 2) * 1.2;
-        const isSelected = selectedTiles.includes(tileId);
-        return (
-          <MahjongTile key={tileId} position={[x, -2, 2]} rotation={[0, 0, 0]} tileId={tileId} selected={isSelected}
-            onClick={() => { if (isMyTurn) discardTile(tileId); else onTileClick(tileId); }}
-            onHover={onTileHover} />
-        );
-      })}
+        {myTiles.map((tileId, index) => {
+          const x = (index - (myTiles.length - 1) / 2) * 1.2;
+          const isSelected = selectedTiles.includes(tileId);
+          return (
+            <MahjongTile key={tileId} position={[x, -2, 2]} rotation={[0, 0, 0]} tileId={tileId} selected={isSelected}
+              onClick={() => { if (isMyTurn) discardTile(tileId); else onTileClick(tileId); }}
+              onHover={onTileHover} />
+          );
+        })}
 
-      {discardPile.map((tileId, index) => {
-        const x = (index - (discardPile.length - 1) / 2) * 0.8;
-        return (
-          <MahjongTile key={`discard-${tileId}-${index}`} position={[x, 0, -4]} rotation={[0, 0, 0]} tileId={tileId}
-            selected={selectedTiles.includes(tileId)} onClick={() => onTileClick(tileId)} onHover={onTileHover} />
-        );
-      })}
+        {discardPile.map((tileId, index) => {
+          const x = (index - (discardPile.length - 1) / 2) * 0.8;
+          return (
+            <MahjongTile key={`discard-${tileId}-${index}`} position={[x, 0, -4]} rotation={[0, 0, 0]} tileId={tileId}
+              selected={selectedTiles.includes(tileId)} onClick={() => onTileClick(tileId)} onHover={onTileHover} />
+          );
+        })}
 
-      {!isDualCamera && <OrbitControls enableZoom={true} enablePan={true} />}
+        {!isDualCamera && <OrbitControls enableZoom={true} enablePan={true} />}
 
-      <PostProcessingEffects />
-    </Canvas>
+        <PostProcessingEffects />
+      </Canvas>
+    </div>
   );
 }
 
