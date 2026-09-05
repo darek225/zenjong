@@ -44,3 +44,18 @@
 ### Verification
 - Health check: `https://zenjong-backend.onrender.com/` should return Colyseus server response
 - WebSocket test: Use browser dev console: `new WebSocket("wss://zenjong-backend.onrender.com")`
+
+### Connect the Vercel frontend
+In Vercel, open **Project Settings → Environment Variables** and add this variable for
+**Production** (and Preview if you want preview deployments to connect):
+
+```text
+NEXT_PUBLIC_SOCKET_URL=wss://zenjong-backend.onrender.com
+```
+
+Then redeploy the frontend. This value is substituted during `next build`; changing it
+without a new deployment will not update the client bundle. Do not use `ws://` from an
+HTTPS Vercel deployment, because browsers block insecure WebSocket connections.
+
+The local `.env.local` may use `ws://localhost:2567`, but that local value must not be
+copied into Vercel.

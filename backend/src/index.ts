@@ -9,6 +9,8 @@ const app = express();
 
 app.use(cors());
 app.use(express.json());
+app.get("/", (_request, response) => response.json({ service: "zenjong-colyseus", status: "ok" }));
+app.get("/health", (_request, response) => response.json({ status: "ok" }));
 
 const server = http.createServer(app);
 const gameServer = new Server({
