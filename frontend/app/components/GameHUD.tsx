@@ -79,7 +79,7 @@ export default function GameHUD(props: GameHUDProps) {
       <div className="absolute left-1/2 transform -translate-x-1/2 flex flex-col items-center pointer-events-auto gap-2">
         <div className={`flex items-center space-x-2 px-5 py-2.5 rounded-full backdrop-blur-xl border shadow-lg transition-all duration-300 ${turnBg}`}>
           <div className={`w-3.5 h-3.5 rounded-full shadow-md ${turnDot}`}></div>
-          <span className="text-sm font-semibold text-white drop-shadow-sm">{isConnected ? isMyTurn ? "⭐ Your Turn!" : "Waiting..." : "Disconnected"}</span>
+          <span className="text-sm font-semibold text-white drop-shadow-sm">{isConnected ? isMyTurn ? "⭐ Your Turn!" : "Waiting..." : "Offline Preview — Multiplayer Unavailable"}</span>
         </div>
       </div>
       <div className="glass-panel rounded-xl p-4 pointer-events-auto border border-white/10 shadow-xl">

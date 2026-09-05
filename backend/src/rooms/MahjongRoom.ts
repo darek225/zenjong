@@ -128,12 +128,15 @@ export class MahjongRoom extends Room<MahjongState> {
   }
 
   private startGame() {
+    if (this.state.gameStarted) return;
+    this.lobbyTimer?.clear();
+    this.lobbyTimer = null;
     this.state.gameStarted = true;
     const deck = TileManager.createDeck();
     const shuffled = TileManager.shuffleDeck(deck);
     this.state.wall.tiles.clear();
     for (const t of shuffled) {
-      this.state.wall.tiles.push(new Tile(t.type, t.value, t.name));
+      this.state.wall.tiles.push(new Tile(t.type, t.value, t.name, t.id));
     }
     this.state.wall.remaining = this.state.wall.tiles.length;
     this.playerOrder = Array.from(this.state.players.keys());
@@ -142,25 +145,18 @@ export class MahjongRoom extends Room<MahjongState> {
       if (p) {
         p.hand.clear();
         for (let i = 0; i < OPENING_HAND_SIZE; i++) {
-          const idx = this.getNextTileIndex();
-          if (idx !== -1) {
-            const wallTile = this.state.wall.tiles[idx];
-            if (wallTile) p.hand.push(wallTile);
-          }
+          const tile = this.getNextTile();
+          if (tile) p.hand.push(tile);
         }
       }
     }
     this.startTurn(this.playerOrder[0]);
   }
 
-  private getNextTileIndex(): number {
-    if (this.state.wall.tiles.length > 0) {
-      const idx = this.state.wall.tiles.length - 1;
-      this.state.wall.tiles.pop();
-      this.state.wall.remaining = this.state.wall.tiles.length;
-      return idx;
-    }
-    return -1;
+  private getNextTile(): Tile | null {
+    const tile = this.state.wall.tiles.pop() ?? null;
+    this.state.wall.remaining = this.state.wall.tiles.length;
+    return tile;
   }
 
   private startTurn(playerId: string) {
@@ -224,14 +220,11 @@ export class MahjongRoom extends Room<MahjongState> {
     if (client.sessionId !== this.state.currentTurn) return;
     const p = this.state.players.get(client.sessionId);
     if (!p) return;
-    const idx = this.getNextTileIndex();
-    if (idx !== -1) {
-      const tile = this.state.wall.tiles[idx];
-      if (tile) {
-        p.hand.push(tile);
-        this.state.turnState.isDrawing = false;
-        this.state.turnState.canDiscard = true;
-      }
+    const tile = this.getNextTile();
+    if (tile) {
+      p.hand.push(tile);
+      this.state.turnState.isDrawing = false;
+      this.state.turnState.canDiscard = true;
     } else {
       this.state.roundOver = true;
       this.endRound();
@@ -245,7 +238,7 @@ export class MahjongRoom extends Room<MahjongState> {
     const tile = p.hand[idx];
     if (!tile) return;
     p.hand.splice(idx, 1);
-    this.state.discardPile.tiles.push(new Tile(tile.type, tile.value, tile.name));
+    this.state.discardPile.tiles.push(tile);
     this.state.turnState.canDiscard = false;
     this.state.turnState.canClaim = true;
     this.nextTurn();

@@ -1,116 +1,62 @@
 "use client";
 
-import { Client } from "colyseus.js";
-import Config from "./config";
-import { showConnectionToast } from "./config";
+import { Client, Room } from "colyseus.js";
+import { getWebSocketUrl, clearLastError } from "./config";
 
-/**
- * Resolve WebSocket endpoint with production-safe fallback
- * - Uses NEXT_PUBLIC_SOCKET_URL if set (preferred for production)
- * - Returns null for production hosts if not configured (prevents ERR_CONNECTION_REFUSED)
- * - Falls back to ws://localhost:2567 only in development
- */
-const getWebSocketEndpoint = (): string | null => {
-  // Preferred: explicit env var (works in both client and server)
-  if (process.env.NEXT_PUBLIC_SOCKET_URL) {
-    return process.env.NEXT_PUBLIC_SOCKET_URL;
-  }
-  // Next.js exposes NEXT_PUBLIC_* on the client via NEXT_PUBLIC_* vars injected at build time
-  if (typeof window !== "undefined") {
-    const isLocalHost =
-      window.location.hostname === "localhost" ||
-      window.location.hostname === "127.0.0.1";
-    // In production, never default to a hardcoded localhost — disable gracefully
-    if (!isLocalHost) {
-      return null;
-    }
-  }
-  // Development fallback only
-  return "ws://localhost:2567";
-};
-
-/**
- * Create a Colyseus client with centralized environment configuration
- * Uses NEXT_PUBLIC_COLYSEUS_URL for production deployment with graceful fallbacks
- * Returns null if no WebSocket endpoint is configured (enables single-player fallback)
- */
 export const createColyseusClient = (): Client | null => {
-  if (typeof window === "undefined") {
-    return null; // SSR: return null, handle in hook
-  }
-
-  // Use centralized config with fallback strategy
-  let url: string | null = Config.getWebSocketUrl?.(true) ?? null;
-  if (!url || url === "ws://localhost:2567") {
-    url = getWebSocketEndpoint();
-  }
-  if (!url) {
-    // No WebSocket endpoint configured - enable single-player mode
-    console.info("[Config] No WebSocket endpoint configured. Running in single-player mode.");
-    Config.recordConnectionError?.("Single-player mode active (no multiplayer server)", "disabled");
-    return null;
-  }
-
-  console.info(`[Config] Connecting to WebSocket: ${url}`);
-
-  const client = new Client(url);
-
-  return client;
+  if (typeof window === "undefined") return null;
+  const url = getWebSocketUrl();
+  return url ? new Client(url) : null;
 };
 
-/**
- * Type-safe room joining with connection error handling and exponential backoff
- */
+const abortError = () => new DOMException("Room join cancelled", "AbortError");
+
+function waitForRetry(delay: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) { reject(abortError()); return; }
+    const onAbort = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      reject(abortError());
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, delay);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+/** At most three attempts; dispose successful joins that finish after cancellation. */
 export const joinRoomWithRetry = async (
   client: Client,
   roomName: string,
-  maxRetries = 3
-): Promise<any> => {
-  let lastError: Error | null = null;
-
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+  maxRetries = 3,
+  signal?: AbortSignal
+): Promise<Room> => {
+  const attempts = Math.min(3, Math.max(1, Math.floor(maxRetries) || 1));
+  let lastError: unknown = new Error("Unable to join room");
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    if (signal?.aborted) throw abortError();
     try {
-      console.log(`[Colyseus] Attempt ${attempt}/${maxRetries} to join room: ${roomName}`);
       const joinedRoom = await client.joinOrCreate(roomName);
-      
-      // Clear any previous errors on success
-      return joinedRoom;
-    } catch (error: any) {
-      lastError = error;
-      console.error(`[Colyseus] Attempt ${attempt} failed:`, error);
-      
-      // Show user-friendly toast on connection failure
-      showConnectionToast(
-        `Connection attempt ${attempt} failed. Retrying...`
-      );
-
-      if (attempt < maxRetries) {
-        // Exponential backoff: 1s, 2s, 4s
-        const delay = Math.pow(2, attempt) * 1000;
-        await new Promise((resolve) => setTimeout(resolve, delay));
+      if (signal?.aborted) {
+        await leaveRoomSafely(joinedRoom);
+        throw abortError();
       }
+      clearLastError();
+      return joinedRoom;
+    } catch (error) {
+      if (signal?.aborted) throw abortError();
+      lastError = error;
+      if (attempt + 1 < attempts) await waitForRetry(1000 * 2 ** attempt, signal);
     }
   }
-
-  // All retries exhausted - show user-friendly error
-  showConnectionToast(
-    "Unable to connect to game server. Please check your connection."
-  );
-
   throw lastError;
 };
 
-/**
- * Safely leave a room with cleanup
- */
-export const leaveRoomSafely = async (room: any): Promise<void> => {
-  if (!room) return;
-  // Safely exit room without throwing if the room is not a valid Room instance
-  if (typeof room.leave === 'function') {
-    try {
-      await room.leave();
-    } catch (error) {
-      console.warn("[Colyseus] Error leaving room:", error);
-    }
-  }
+export const leaveRoomSafely = async (room: unknown): Promise<void> => {
+  if (!room || typeof (room as Room).leave !== "function") return;
+  try { await (room as Room).leave(); }
+  catch { /* The transport may already be closed. */ }
 };

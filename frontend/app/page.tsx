@@ -47,7 +47,7 @@ export default function Home() {
   const [mapSelectorOpen, setMapSelectorOpen] = useState(false);
 
   // Derive score from game state (simplified)
-  const activeScore = gameState?.players?.get(room?.sessionId)?.score ?? 0;
+  const activeScore = room ? gameState?.players.get(room.sessionId)?.score ?? 0 : 0;
 
   const handleTileClick = (tileId: string) => {
     // Only allow discarding when it's the local player's turn

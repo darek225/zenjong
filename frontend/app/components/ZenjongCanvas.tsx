@@ -10,6 +10,7 @@ import AmbientParticles from "./environments/AmbientParticles";
 import BrazierFlames from "./environments/BrazierFlames";
 import SpotlightBeams from "./environments/SpotlightBeams";
 import { ENVIRONMENTS, MapTheme } from "../../lib/environments";
+import { getTileType } from "../../lib/networkState";
 
 interface ZenjongCanvasProps {
   children?: React.ReactNode;
@@ -45,28 +46,24 @@ const CAMERA_PRESETS: Record<string, { position: [number, number, number]; fov: 
  * Listens for `webglcontextlost` and `webglcontextrestored` events
  * on the canvas element and triggers a re-render to prevent white-screen crashes.
  */
-function WebGLContextLossHandler() {
-  const { gl } = useThree();
-  const [contextLost, setContextLost] = useState(false);
+function WebGLContextLossHandler({ onChange }: { onChange: (lost: boolean) => void }) {
+  const { gl, get, setFrameloop, invalidate } = useThree();
 
   useEffect(() => {
     const canvas = gl.domElement;
-    let lostTimer: ReturnType<typeof setTimeout> | null = null;
+    let previousFrameloop = get().frameloop;
 
     const handleContextLost = (e: Event) => {
       e.preventDefault();
-      console.warn("[WebGL] Context lost — pausing render loop");
-      setContextLost(true);
+      if (get().frameloop !== "never") previousFrameloop = get().frameloop;
+      setFrameloop("never");
+      onChange(true);
     };
 
     const handleContextRestored = () => {
-      console.info("[WebGL] Context restored — reinitializing textures");
-      // Give the browser a moment to recreate the context before re-enabling
-      lostTimer = setTimeout(() => {
-        setContextLost(false);
-        // Force a resize to ensure the renderer picks up the correct canvas size
-        gl.setSize(window.innerWidth, window.innerHeight);
-      }, 500);
+      setFrameloop(previousFrameloop);
+      onChange(false);
+      invalidate();
     };
 
     canvas.addEventListener("webglcontextlost", handleContextLost);
@@ -75,34 +72,8 @@ function WebGLContextLossHandler() {
     return () => {
       canvas.removeEventListener("webglcontextlost", handleContextLost);
       canvas.removeEventListener("webglcontextrestored", handleContextRestored);
-      if (lostTimer) clearTimeout(lostTimer);
     };
-  }, [gl]);
-
-  // Render a fallback overlay when context is lost
-  if (contextLost) {
-    return (
-      <div
-        style={{
-          position: "absolute",
-          top: 0,
-          left: 0,
-          width: "100%",
-          height: "100%",
-          background: "rgba(0, 0, 0, 0.85)",
-          color: "#fff",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          flexDirection: "column",
-          gap: "12px",
-          zIndex: 1000,
-        }}
-      >
-        <span>WebGL context lost. Restoring…</span>
-      </div>
-    );
-  }
+  }, [gl, get, setFrameloop, invalidate, onChange]);
 
   return null;
 }
@@ -297,6 +268,9 @@ export default function ZenjongCanvas({
 }: ZenjongCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isClient, setIsClient] = useState(false);
+  const [contextLost, setContextLost] = useState(false);
+  const validTiles = (myTiles ?? []).filter(id => typeof id === "string" && getTileType(id));
+  const validDiscards = (discardPile ?? []).filter(id => typeof id === "string" && getTileType(id));
   useEffect(() => { setIsClient(true); }, []);
 
   const theme: MapTheme | undefined = ENVIRONMENTS.find(
@@ -331,13 +305,13 @@ export default function ZenjongCanvas({
         dpr={[1, 2]}
         shadows={{ type: THREE.PCFSoftShadowMap }}
       >
-        <WebGLContextLossHandler />
+        <WebGLContextLossHandler onChange={setContextLost} />
         <CameraPresetHandler onCameraPresetChange={onCameraPresetChange} />
         <TouchGestureHandler />
         {triggerShake && triggerShake > 0 && <ShakeEffect intensity={triggerShake} />}
 
         <ambientLight intensity={0.3} />
-        <directionalLight position={[0, 12, 0]} intensity={1.8} castShadow shadow-map-size-width={2048} shadow-map-size-height={2048} shadow-camera-near={0.5} shadow-camera-far={50} shadow-camera-top={10} shadow-camera-bottom={-10} shadow-camera-left={-10} shadow-camera-right={10} shadow-bias={-0.0001} />
+        <directionalLight position={[0, 12, 0]} intensity={1.8} castShadow shadow-mapSize-width={2048} shadow-mapSize-height={2048} shadow-camera-near={0.5} shadow-camera-far={50} shadow-camera-top={10} shadow-camera-bottom={-10} shadow-camera-left={-10} shadow-camera-right={10} shadow-bias={-0.0001} />
         <directionalLight position={[5, 8, 5]} intensity={0.6} />
         <directionalLight position={[-3, 6, -3]} intensity={0.4} color="#ffd700" />
 
@@ -363,20 +337,20 @@ export default function ZenjongCanvas({
 
         {theme && <AmbientParticles color={theme.palette.accent} count={150} radius={8} speed={0.3} size={0.1} />}
 
-        {myTiles.map((tileId, index) => {
-          const x = (index - (myTiles.length - 1) / 2) * 1.2;
+        {validTiles.map((tileId, index) => {
+          const x = (index - (validTiles.length - 1) / 2) * 1.2;
           const isSelected = selectedTiles.includes(tileId);
           return (
-            <MahjongTile key={tileId} position={[x, -2, 2]} rotation={[0, 0, 0]} tileId={tileId} selected={isSelected}
+            <MahjongTile key={tileId} position={[x, -2, 2]} rotation={[0, 0, 0]} tileId={tileId} tileType={getTileType(tileId)} selected={isSelected}
               onClick={() => { if (isMyTurn) discardTile(tileId); else onTileClick(tileId); }}
               onHover={onTileHover} />
           );
         })}
 
-        {discardPile.map((tileId, index) => {
-          const x = (index - (discardPile.length - 1) / 2) * 0.8;
+        {validDiscards.map((tileId, index) => {
+          const x = (index - (validDiscards.length - 1) / 2) * 0.8;
           return (
-            <MahjongTile key={`discard-${tileId}-${index}`} position={[x, 0, -4]} rotation={[0, 0, 0]} tileId={tileId}
+            <MahjongTile key={`discard-${tileId}-${index}`} position={[x, 0, -4]} rotation={[0, 0, 0]} tileId={tileId} tileType={getTileType(tileId)}
               selected={selectedTiles.includes(tileId)} onClick={() => onTileClick(tileId)} onHover={onTileHover} />
           );
         })}
@@ -385,6 +359,11 @@ export default function ZenjongCanvas({
 
         <PostProcessingEffects />
       </Canvas>
+      {contextLost && (
+        <div role="status" className="absolute inset-0 z-50 flex items-center justify-center bg-black/85 text-white">
+          Graphics interrupted. Waiting for WebGL to recover.
+        </div>
+      )}
     </div>
   );
 }

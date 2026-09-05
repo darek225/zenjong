@@ -7,12 +7,19 @@
  *  - 3 types of characters: 1-9 characters (36 tiles)
  *  - 3 types of bamboo: 1-9 bamboo (36 tiles) 
  *  - 3 types of dots: 1-9 dots (36 tiles)
- *  - 8 honor tiles: 4 winds, 4 dragons
+ *  - 28 honor tiles: 4 copies of 4 winds and 3 dragons
  *  - 8 bonus tiles: 4 flowers, 4 seasons
  * 
  * Fisher-Yates shuffle algorithm for proper randomization
  * Grid coordinate generator for standard Mahjong board layout
  */
+export interface DeckTile {
+  id: string;
+  type: string;
+  value: number;
+  name: string;
+}
+
 export class TileManager {
   // Tile types
   public static readonly SUITS = {
@@ -35,77 +42,33 @@ export class TileManager {
   public static readonly SEASONS = ['Spring', 'Summer', 'Autumn', 'Winter'];
 
   // Create complete 144-tile deck
-  public static createDeck(): any[] {
-    const deck: any[] = [];
-
-    // Bamboo tiles (36 tiles)
-    for (const value of this.BAMBOO_VALUES) {
-      deck.push({
-        type: this.SUITS.BAMBOO,
-        value: value,
-        id: `${this.SUITS.BAMBOO}-${value}`
-      });
+  public static createDeck(): DeckTile[] {
+    const deck: DeckTile[] = [];
+    for (const type of [this.SUITS.BAMBOO, this.SUITS.CHARACTERS, this.SUITS.DOTS]) {
+      for (let value = 1; value <= 9; value++) {
+        for (let copy = 0; copy < 4; copy++) {
+          deck.push({ id: `${type}-${value}-${copy}`, type, value, name: "" });
+        }
+      }
     }
-
-    // Characters tiles (36 tiles)
-    for (const value of this.CHARACTERS_VALUES) {
-      deck.push({
-        type: this.SUITS.CHARACTERS,
-        value: value,
-        id: `${this.SUITS.CHARACTERS}-${value}`
-      });
+    const namedTiles: [string, string[], number][] = [
+      [this.SUITS.WINDS, this.WINDS, 4],
+      [this.SUITS.DRAGONS, this.DRAGONS, 4],
+      [this.SUITS.FLOWERS, this.FLOWERS, 1],
+      [this.SUITS.SEASONS, this.SEASONS, 1],
+    ];
+    for (const [type, names, copies] of namedTiles) {
+      for (const name of names) {
+        for (let copy = 0; copy < copies; copy++) {
+          deck.push({ id: `${type}-${name}-${copy}`, type, value: 0, name });
+        }
+      }
     }
-
-    // Dots tiles (36 tiles)
-    for (const value of this.DOTS_VALUES) {
-      deck.push({
-        type: this.SUITS.DOTS,
-        value: value,
-        id: `${this.SUITS.DOTS}-${value}`
-      });
-    }
-
-    // Honor tiles - Winds (16 tiles)
-    for (const wind of this.WINDS) {
-      deck.push({
-        type: this.SUITS.WINDS,
-        name: wind,
-        id: `${this.SUITS.WINDS}-${wind}`
-      });
-    }
-
-    // Honor tiles - Dragons (12 tiles)
-    for (const dragon of this.DRAGONS) {
-      deck.push({
-        type: this.SUITS.DRAGONS,
-        name: dragon,
-        id: `${this.SUITS.DRAGONS}-${dragon}`
-      });
-    }
-
-    // Bonus tiles - Flowers (8 tiles)
-    for (const flower of this.FLOWERS) {
-      deck.push({
-        type: this.SUITS.FLOWERS,
-        name: flower,
-        id: `${this.SUITS.FLOWERS}-${flower}`
-      });
-    }
-
-    // Bonus tiles - Seasons (8 tiles)
-    for (const season of this.SEASONS) {
-      deck.push({
-        type: this.SUITS.SEASONS,
-        name: season,
-        id: `${this.SUITS.SEASONS}-${season}`
-      });
-    }
-
     return deck;
   }
 
   // Fisher-Yates shuffle algorithm
-  public static shuffleDeck(deck: any[]): any[] {
+  public static shuffleDeck<T>(deck: T[]): T[] {
     const shuffled = [...deck]; // Copy to avoid mutation
     for (let i = shuffled.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));

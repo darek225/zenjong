@@ -6,12 +6,12 @@ export class Tile extends Schema {
   @type("string") name: string = "";
   @type("string") id: string = "";
 
-  constructor(type: string = "", value: number = 0, name?: string) {
+  constructor(type: string = "", value: number = 0, name?: string, id?: string) {
     super();
     this.type = type;
     this.value = value;
     this.name = name || "";
-    this.id = `${type}-${name || value}`;
+    this.id = id ?? `${type}-${name || value}`;
   }
 }
 

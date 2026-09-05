@@ -1,94 +1,43 @@
-/**
- * Centralized environment configuration utility
- * Provides type-safe access to environment variables with production fallbacks
- */
+/** Static public env access is required for Next.js build-time substitution. */
+const configuredUrl = process.env.NEXT_PUBLIC_SOCKET_URL?.trim()
+  || process.env.NEXT_PUBLIC_COLYSEUS_URL?.trim()
+  || process.env.NEXT_PUBLIC_WEBSOCKET_URL?.trim()
+  || process.env.NEXT_PUBLIC_PRODUCTION_WEBSOCKET_URL?.trim();
 
-const NEXT_PUBLIC_WEBSOCKET_URL = process.env.NEXT_PUBLIC_WEBSOCKET_URL;
-const NEXT_PUBLIC_PRODUCTION_WEBSOCKET_URL = process.env.NEXT_PUBLIC_PRODUCTION_WEBSOCKET_URL;
-const WEBSOCKET_URL = process.env.WEBSOCKET_URL;
-
-function getEnv(name: string): string | undefined {
-  return process.env[name];
+export function resolveWebSocketUrl(
+  configured: string | undefined,
+  development: boolean,
+  location?: { hostname: string; protocol: string }
+): string | null {
+  const isLocal = (host: string) => host === "localhost" || host.endsWith(".localhost")
+    || host === "[::1]" || host === "::1" || host === "0.0.0.0" || /^127\./.test(host);
+  const localDevelopment = development && (!location || isLocal(location.hostname));
+  const candidate = configured?.trim() || (localDevelopment ? "ws://localhost:2567" : null);
+  if (!candidate || /[\u0000-\u0020]/.test(candidate)) return null;
+  try {
+    const url = new URL(candidate);
+    if (!["ws:", "wss:"].includes(url.protocol) || url.username || url.password) return null;
+    if (!localDevelopment && isLocal(url.hostname)) return null;
+    if ((!development || location?.protocol === "https:") && url.protocol !== "wss:") return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
 }
 
-export interface AppConfig {
-  websocketUrl: string;
-  productionWebSocketUrl: string;
-  productionFallbackUrl: string;
-  serverPort: number;
-  isDevelopment: boolean;
-  isProduction: boolean;
-  getWebSocketUrl?: (fallbackOnError?: boolean) => string | null;
-  showConnectionToast?: (message: string) => void;
-  recordConnectionError?: (message: string, url: string) => void;
-  getLastError?: () => { message: string; timestamp: number; url: string } | null;
-  clearLastError?: () => void;
-  validateConfig?: () => string[];
+export function getWebSocketUrl(): string | null {
+  return resolveWebSocketUrl(configuredUrl, process.env.NODE_ENV === "development",
+    typeof window === "undefined" ? undefined : window.location);
 }
 
-export const Config: AppConfig = {
-  websocketUrl: NEXT_PUBLIC_WEBSOCKET_URL || WEBSOCKET_URL || "ws://localhost:2567",
-  productionWebSocketUrl: NEXT_PUBLIC_PRODUCTION_WEBSOCKET_URL || "ws://localhost:2567",
-  productionFallbackUrl: "ws://localhost:2567",
-  serverPort: Number(getEnv("SERVER_PORT") || 3000),
-  isDevelopment: process.env.NODE_ENV === "development",
-  isProduction: process.env.NODE_ENV === "production",
-};
-
-type ConnectionError = {
-  message: string;
-  timestamp: number;
-  url: string;
-} | null;
-
-let lastConnectionError: ConnectionError = null;
+type ConnectionError = { message: string; timestamp: number; url: string };
+let lastConnectionError: ConnectionError | null = null;
 
 export function recordConnectionError(message: string, url: string): void {
   lastConnectionError = { message, timestamp: Date.now(), url };
-  console.warn(`[Config] Connection error recorded: ${message} at ${url}`);
 }
+export function clearLastError(): void { lastConnectionError = null; }
+export function getLastError(): ConnectionError | null { return lastConnectionError; }
 
-export function getLastError(): ConnectionError {
-  return lastConnectionError;
-}
-
-export function clearLastError(): void {
-  lastConnectionError = null;
-}
-
-export function showConnectionToast(message: string): void {
-  console.warn(`[Config][Toast] ${message}`);
-}
-
-export function getWebSocketUrl(fallbackOnError = true): string | null {
-  if (Config.websocketUrl && Config.websocketUrl !== "ws://localhost:2567") {
-    return Config.websocketUrl;
-  }
-  if (Config.isDevelopment) {
-    return Config.websocketUrl;
-  }
-  if (Config.productionWebSocketUrl !== "ws://localhost:2567") {
-    return Config.productionWebSocketUrl;
-  }
-  if (fallbackOnError) {
-    showConnectionToast("Using local WebSocket endpoint. Check your production WebSocket configuration.");
-  }
-  return Config.productionFallbackUrl;
-}
-
-export function validateConfig(): string[] {
-  const errors: string[] = [];
-  if (Config.isProduction && Config.websocketUrl === "ws://localhost:2567") {
-    errors.push("Production detected - WebSocket URL points to localhost:2567. Set NEXT_PUBLIC_WEBSOCKET_URL to your production WebSocket server.");
-  }
-  return errors;
-}
-
+export const Config = { getWebSocketUrl, recordConnectionError, clearLastError, getLastError };
 export default Config;
-
-(Config as any).getWebSocketUrl = getWebSocketUrl;
-(Config as any).showConnectionToast = showConnectionToast;
-(Config as any).recordConnectionError = recordConnectionError;
-(Config as any).getLastError = getLastError;
-(Config as any).clearLastError = clearLastError;
-(Config as any).validateConfig = validateConfig;
