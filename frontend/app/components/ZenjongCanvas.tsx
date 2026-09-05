@@ -1,7 +1,7 @@
 import { Canvas, useThree, useFrame } from "@react-three/fiber";
 import { OrbitControls, ContactShadows } from "@react-three/drei";
 import { PostProcessingEffects } from "../../src/components/3d/PostProcessingEffects";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { ACESFilmicToneMapping } from "three";
 import * as THREE from "three";
 import MahjongTile from "./MahjongTile";
@@ -33,47 +33,168 @@ const CAMERA_PRESETS: Record<string, { position: [number, number, number]; fov: 
   LOW_ARCADE: { position: [0, 6, 14], fov: 50 },
 };
 
+/**
+ * Touch gesture handler with:
+ * - Two-finger pan (translate camera horizontally)
+ * - Pinch-to-zoom (scale camera distance)
+ * - Double-tap reset (quickly tap twice to reset camera)
+ * - Ghost click prevention (block single-finger taps during pan/zoom gestures)
+ */
 function TouchGestureHandler() {
   const { gl, camera } = useThree();
-  const lastTapTime = useRef(0);
-  const pinchStartDist = useRef(0);
+
+  // Gesture state
+  const touchState = useRef({
+    lastTapTime: 0,
+    pinchStartDist: 0,
+    pinchStartZoom: 1,
+    panStartMidX: 0,
+    panStartMidY: 0,
+    isGesturing: false,
+    pointerDownPos: { x: 0, y: 0 },
+    pointerMoved: false,
+  });
+
+  // Reusable vectors to avoid GC pressure in the touch loop
+  const tempVec = useRef(new THREE.Vector3());
+  const tempVec2 = useRef(new THREE.Vector3());
+
+  const resetCamera = useCallback(() => {
+    if (camera instanceof THREE.PerspectiveCamera) {
+      camera.position.set(0, 16, 18);
+      camera.lookAt(0, 0, 0);
+      camera.fov = 50;
+      camera.updateProjectionMatrix();
+    }
+  }, [camera]);
 
   useEffect(() => {
     const canvas = gl.domElement;
+    const state = touchState.current;
+
     const handleTouchStart = (e: TouchEvent) => {
-      if (e.touches.length === 2) {
-        pinchStartDist.current = Math.hypot(
-          e.touches[0].clientX - e.touches[1].clientX,
-          e.touches[0].clientY - e.touches[1].clientY
-        );
-      } else if (e.touches.length === 1) {
+      // Block default browser behaviors (scroll/zoom/etc.) so OrbitControls stays in sync
+      e.preventDefault();
+
+      const touchCount = e.touches.length;
+
+      if (touchCount === 1) {
+        // Track starting position for tap detection and ghost-click prevention
+        const touch = e.touches[0];
+        state.pointerDownPos = { x: touch.clientX, y: touch.clientY };
+        state.pointerMoved = false;
+
+        // Double-tap detection (within 300 ms)
         const now = Date.now();
-        if (now - lastTapTime.current < 300) {
-          camera.position.set(0, 16, 18);
-          camera.lookAt(0, 0, 0);
-          lastTapTime.current = 0;
+        if (now - state.lastTapTime < 300) {
+          resetCamera();
+          state.lastTapTime = 0;
         } else {
-          lastTapTime.current = now;
+          state.lastTapTime = now;
+        }
+      } else if (touchCount === 2) {
+        // Two-finger gesture: lock out OrbitControls and remember start state
+        state.isGesturing = true;
+
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        state.pinchStartDist = Math.hypot(dx, dy);
+        state.pinchStartZoom = camera.position.length();
+
+        state.panStartMidX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+        state.panStartMidY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      }
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      e.preventDefault();
+
+      const touchCount = e.touches.length;
+
+      if (touchCount === 1 && state.isGesturing) {
+        // Single-finger continuation of a previous two-finger gesture — pan
+        const touch = e.touches[0];
+        const deltaX = (touch.clientX - state.panStartMidX) * 0.05;
+        const deltaY = (touch.clientY - state.panStartMidY) * 0.05;
+
+        camera.getWorldDirection(tempVec.current);
+        tempVec2.current.set(tempVec.current.x, 0, tempVec.current.z).normalize();
+
+        camera.position.addScaledVector(tempVec2.current, -deltaX);
+        camera.position.y += deltaY;
+
+        state.panStartMidX = touch.clientX;
+        state.panStartMidY = touch.clientY;
+        state.pointerMoved = true;
+      } else if (touchCount === 2) {
+        state.isGesturing = true;
+        state.pointerMoved = true;
+
+        // Pinch-to-zoom
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        const currentDist = Math.hypot(dx, dy);
+        const pinchScale = state.pinchStartDist / currentDist;
+
+        const newDist = state.pinchStartZoom * pinchScale;
+        const clampedDist = Math.max(5, Math.min(50, newDist));
+        const currentLen = camera.position.length();
+        const scale = clampedDist / currentLen;
+        camera.position.multiplyScalar(scale);
+
+        // Two-finger pan
+        const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+        const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+        const panDeltaX = (midX - state.panStartMidX) * 0.03;
+        const panDeltaY = (midY - state.panStartMidY) * 0.03;
+
+        camera.getWorldDirection(tempVec.current);
+        tempVec2.current.set(tempVec.current.x, 0, tempVec.current.z).normalize();
+        camera.position.addScaledVector(tempVec2.current, -panDeltaX);
+        camera.position.y += panDeltaY;
+
+        state.panStartMidX = midX;
+        state.panStartMidY = midY;
+        state.pinchStartDist = currentDist;
+        state.pinchStartZoom = camera.position.length();
+      } else if (touchCount === 1 && !state.isGesturing) {
+        // Track single-finger movement so we can mark the gesture as a drag
+        // and prevent the resulting tap from being treated as a tile click.
+        const touch = e.touches[0];
+        const moveX = Math.abs(touch.clientX - state.pointerDownPos.x);
+        const moveY = Math.abs(touch.clientY - state.pointerDownPos.y);
+        if (moveX > 10 || moveY > 10) {
+          state.pointerMoved = true;
         }
       }
     };
-    const handleTouchMove = (e: TouchEvent) => {
-      if (e.touches.length === 2) {
-        const currentDist = Math.hypot(
-          e.touches[0].clientX - e.touches[1].clientX,
-          e.touches[0].clientY - e.touches[1].clientY
-        );
-        camera.position.multiplyScalar(currentDist / pinchStartDist.current);
-        pinchStartDist.current = currentDist;
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      if (e.touches.length === 0) {
+        state.isGesturing = false;
+        state.pointerMoved = false;
       }
     };
+
+    const handleContextMenu = (e: Event) => {
+      e.preventDefault();
+    };
+
     canvas.addEventListener("touchstart", handleTouchStart, { passive: false });
     canvas.addEventListener("touchmove", handleTouchMove, { passive: false });
+    canvas.addEventListener("touchend", handleTouchEnd, { passive: false });
+    canvas.addEventListener("touchcancel", handleTouchEnd, { passive: false });
+    canvas.addEventListener("contextmenu", handleContextMenu);
+
     return () => {
       canvas.removeEventListener("touchstart", handleTouchStart);
       canvas.removeEventListener("touchmove", handleTouchMove);
+      canvas.removeEventListener("touchend", handleTouchEnd);
+      canvas.removeEventListener("touchcancel", handleTouchEnd);
+      canvas.removeEventListener("contextmenu", handleContextMenu);
     };
-  }, [gl, camera]);
+  }, [gl, camera, resetCamera]);
+
   return null;
 }
 
