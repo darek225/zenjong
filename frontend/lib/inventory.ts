@@ -15,6 +15,10 @@ export const MOCK_DEFAULT_INVENTORY: OwnedItem[] = [
   { id: "default-obsidian", name: "Obsidian Gold", item_type: "tileset", isEquipped: false },
   { id: "classic_green", name: "Jade Lantern Pavilion", item_type: "table_skin", isEquipped: true },
   { id: "cyberpunk", name: "Neon Skyline Lounge", item_type: "table_skin", isEquipped: false },
+  { id: "nature_stump", name: "Rain Forest Pavilion", item_type: "table_skin", isEquipped: false },
+  { id: "mystic_sanctuary", name: "Deep Space Station", item_type: "table_skin", isEquipped: false },
+  { id: "temple_courtyard", name: "Cloud Temple", item_type: "table_skin", isEquipped: false },
+  { id: "spotlight_parlor", name: "Golden Parlor", item_type: "table_skin", isEquipped: false },
   { id: "default-avatar", name: "Jade Scholar", item_type: "avatar", isEquipped: true },
 ].map(item => ({ ...item, price: 0, currency_type: "jade", asset_url: "", acquired_at: "2026-01-01T00:00:00.000Z" }));
 

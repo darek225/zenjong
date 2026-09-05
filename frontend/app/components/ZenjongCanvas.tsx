@@ -21,6 +21,9 @@ interface ZenjongCanvasProps {
   revision?: number;
   paused?: boolean;
   backColor?: string;
+  tileSet?: string;
+  reducedMotion?: boolean;
+  ambientEffects?: boolean;
   children?: React.ReactNode;
   myTiles: string[];
   discardPile: string[];
@@ -294,7 +297,7 @@ export default function ZenjongCanvas({
   board, freeIds, reaction = [], revision = 0, paused = false, backColor,
   children, myTiles, discardPile, selectedTiles,
   onTileClick, onTileHover, isMyTurn, discardTile,
-  selectedMapId, isDualCamera, currentCameraPreset, onCameraPresetChange, triggerShake,
+  selectedMapId, isDualCamera, currentCameraPreset, onCameraPresetChange, triggerShake, tileSet = "default-jade", reducedMotion = false, ambientEffects = true,
 }: ZenjongCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isClient, setIsClient] = useState(false);
@@ -346,7 +349,7 @@ export default function ZenjongCanvas({
 
         <mesh position={[0, -0.2, 0]} receiveShadow>
           <boxGeometry args={[14, 0.4, 10]} />
-          <meshStandardMaterial color="#1b4d2e" roughness={0.95} metalness={0} />
+          <meshStandardMaterial color={theme?.tableColor ?? "#1b4d2e"} roughness={0.95} metalness={0} />
         </mesh>
 
         {theme && theme.hasFlames && (
@@ -363,19 +366,19 @@ export default function ZenjongCanvas({
           </>
         )}
 
-        {theme && <AmbientParticles color={theme.palette.accent} count={40} radius={10} speed={0.15} size={0.04} />}
+        {theme && ambientEffects && <AmbientParticles color={theme.palette.accent} count={40} radius={10} speed={reducedMotion ? 0 : 0.15} size={0.04} />}
 
         {board?.map(tile => <MahjongTile key={tile.id}
           position={[tile.x * 0.88, 0.25 + tile.layer * 0.52, tile.z * 1.16]}
           rotation={[-Math.PI / 2, 0, 0]} tileId={tile.id} tileType={tile.face}
-          selected={selectedTiles.includes(tile.id)} backColor={backColor}
+          selected={selectedTiles.includes(tile.id)} backColor={backColor} tileSet={tileSet}
           blocked={paused || !freeIds?.has(tile.id)} onClick={onTileClick} />)}
-        {board && <MatchReaction key={revision} tiles={reaction} />}
+        {board && <MatchReaction key={revision} tiles={reaction} color={theme?.palette.accent ?? "#b6ffe2"} />}
         {!board && validTiles.map((tileId, index) => {
           const x = (index - (validTiles.length - 1) / 2) * 0.88;
           const isSelected = selectedTiles.includes(tileId);
           return (
-            <MahjongTile key={`${tileId}-${index}`} position={[x, 0.62, 4]} rotation={[-Math.PI / 8, 0, 0]} tileId={tileId} tileType={getTileType(tileId)} selected={isSelected}
+            <MahjongTile key={`${tileId}-${index}`} position={[x, 0.62, 4]} rotation={[-Math.PI / 8, 0, 0]} tileId={tileId} tileType={getTileType(tileId)} selected={isSelected} tileSet={tileSet}
               onClick={() => { if (isMyTurn && isSelected) discardTile(tileId); else onTileClick(tileId); }}
               onHover={onTileHover} />
           );
@@ -387,7 +390,7 @@ export default function ZenjongCanvas({
           const z = (Math.floor(index / 12) % 5 - 2) * 1.18 - 0.5;
           const y = 0.25 + Math.floor(index / 60) * 0.5;
           return (
-            <MahjongTile key={`discard-${tileId}-${index}`} position={[x, y, z]} rotation={[-Math.PI / 2, 0, 0]} tileId={tileId} tileType={getTileType(tileId)} />
+            <MahjongTile key={`discard-${tileId}-${index}`} position={[x, y, z]} rotation={[-Math.PI / 2, 0, 0]} tileId={tileId} tileType={getTileType(tileId)} tileSet={tileSet} />
           );
         })}
 
@@ -396,7 +399,7 @@ export default function ZenjongCanvas({
           enableRotate={!isDualCamera} minDistance={12} maxDistance={35}
           minPolarAngle={0.01} maxPolarAngle={Math.PI / 2.5} />
 
-        <PostProcessingEffects />
+        <PostProcessingEffects enabled={ambientEffects && !reducedMotion} />
       </Canvas>
       {contextLost && (
         <div role="status" className="absolute inset-0 z-50 flex items-center justify-center bg-black/85 text-white">

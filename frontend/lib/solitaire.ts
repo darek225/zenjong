@@ -19,13 +19,18 @@ export interface SolitaireState extends SolitaireSnapshot {
   history: SolitaireSnapshot[];
   reaction: SolitaireTile[];
   revision: number;
+  seed: number;
+  layoutId: SolitaireLayoutId;
+  verified: boolean;
 }
+export type SolitaireLayoutId = "turtle" | "fortress" | "twin_peaks" | "butterfly" | "dragon" | "garden";
 export type SolitaireAction =
   | { type: "select"; id: string; now: number }
   | { type: "undo" }
   | { type: "hint" }
   | { type: "shuffle"; seed: number }
-  | { type: "new"; seed: number };
+  | { type: "new"; seed: number; layoutId?: SolitaireLayoutId }
+  | { type: "restore"; state: SolitaireState };
 
 /** Seeded Fisher-Yates for replayable casual hands (not a competitive RNG protocol). */
 function randomSource(seed: number) {
@@ -75,17 +80,33 @@ export function findPair(tiles: SolitaireTile[]): [string, string] | null {
   }
   return null;
 }
-export function createLayout(): SolitaireTile[] {
+function gridLayer(tiles: SolitaireTile[], columns: number, rows: number, layer: number, xScale = 1, zScale = 1) {
+  for (let row = 0; row < rows; row++) for (let column = 0; column < columns; column++) {
+    tiles.push({ id: `tile-${tiles.length}`, face: "DOT_1", x: (column - (columns - 1) / 2) * xScale,
+      z: (row - (rows - 1) / 2) * zScale, layer });
+  }
+}
+export function createLayout(layoutId: SolitaireLayoutId = "turtle"): SolitaireTile[] {
   const tiles: SolitaireTile[] = [];
-  // 96 + 32 + 12 + 4: a compact layered pavilion, within the 14×10 felt.
-  [[12, 8], [8, 4], [4, 3], [2, 2]].forEach(([columns, rows], layer) => {
-    for (let row = 0; row < rows; row++) {
-      for (let column = 0; column < columns; column++) {
-        tiles.push({ id: `tile-${tiles.length}`, face: "DOT_1",
-          x: column - (columns - 1) / 2, z: row - (rows - 1) / 2, layer });
-      }
-    }
-  });
+  gridLayer(tiles, 12, 8, 0);
+  gridLayer(tiles, 8, 4, 1);
+  gridLayer(tiles, 4, 3, 2);
+  gridLayer(tiles, 2, 2, 3);
+  if (layoutId === "fortress") {
+    for (const tile of tiles.filter(tile => tile.layer === 1)) tile.z *= 1.3;
+  } else if (layoutId === "twin_peaks") {
+    for (const tile of tiles.filter(tile => tile.layer >= 1)) tile.x += tile.x < 0 ? -1.2 : 1.2;
+  } else if (layoutId === "butterfly") {
+    for (const tile of tiles.filter(tile => tile.layer === 0)) tile.x += tile.z < 0 ? -0.8 : 0.8;
+    for (const tile of tiles.filter(tile => tile.layer >= 1)) tile.z *= 1.5;
+  } else if (layoutId === "dragon") {
+    for (const tile of tiles) { tile.x += tile.z * 0.22; tile.z *= 1.25; }
+  } else if (layoutId === "garden") {
+    for (const tile of tiles.filter(tile => tile.layer === 0)) tile.x *= 1.15;
+    for (const tile of tiles.filter(tile => tile.layer >= 2)) tile.z *= 0.7;
+  }
+  // Every supported arrangement intentionally contains the traditional 144 positions.
+  if (tiles.length !== 144) throw new Error(`Layout ${layoutId} contains ${tiles.length} tiles; expected 144`);
   return tiles;
 }
 function deck(): TileType[] {
@@ -126,18 +147,19 @@ export function deal(positions: SolitaireTile[], faces: TileType[], seed: number
     }
     if (!remaining.length) return positions.map(tile => ({ ...tile, face: assigned.get(tile.id)! }));
   }
-  // Keep an existing hand intact rather than silently lose progress.
-  return positions;
+  throw new Error(`Unable to verify deal for seed ${seed}`);
 }
-export function createSolitaire(seed = 1): SolitaireState {
-  return { tiles: deal(createLayout(), deck(), seed), selected: null, hint: [], history: [],
-    score: 0, combo: 0, lastMatch: 0, reaction: [], revision: 0 };
+export function createSolitaire(seed = 1, layoutId: SolitaireLayoutId = "turtle"): SolitaireState {
+  const tiles = deal(createLayout(layoutId), deck(), seed);
+  return { tiles, selected: null, hint: [], history: [], score: 0, combo: 0, lastMatch: 0, reaction: [], revision: 0,
+    seed, layoutId, verified: true };
 }
 function snapshot(state: SolitaireState): SolitaireSnapshot {
   return { tiles: state.tiles, score: state.score, combo: state.combo, lastMatch: state.lastMatch };
 }
 export function solitaireReducer(state: SolitaireState, action: SolitaireAction): SolitaireState {
-  if (action.type === "new") return createSolitaire(action.seed);
+  if (action.type === "restore") return action.state;
+  if (action.type === "new") return createSolitaire(action.seed, action.layoutId ?? state.layoutId);
   if (action.type === "hint") return { ...state, selected: null, hint: findPair(state.tiles) ?? [] };
   if (action.type === "undo") {
     const previous = state.history[state.history.length - 1];
@@ -146,7 +168,9 @@ export function solitaireReducer(state: SolitaireState, action: SolitaireAction)
   }
   if (action.type === "shuffle") {
     if (!state.tiles.length) return state;
-    const tiles = deal(state.tiles, state.tiles.map(tile => tile.face), action.seed);
+    let tiles: SolitaireTile[];
+    try { tiles = deal(state.tiles, state.tiles.map(tile => tile.face), action.seed); }
+    catch { return state; }
     return { ...state, tiles, selected: null, hint: [], combo: 0, lastMatch: 0, reaction: [],
       history: [...state.history, snapshot(state)], revision: state.revision + 1 };
   }

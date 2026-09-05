@@ -20,6 +20,8 @@ export type MapTheme = {
   fogColor: string;
   fogIntensity: number;
   hasProps: boolean;
+  roomKind: "tea_house" | "rain_garden" | "cyber_rooftop" | "space_station" | "cloud_temple" | "golden_parlor";
+  matchEffect: "jade" | "petals" | "lightning" | "starlight" | "cloud" | "gold";
   hasFlames?: boolean;
   hasSpotlights?: boolean;
 };
@@ -30,14 +32,14 @@ export const ENVIRONMENTS: MapTheme[] = [
     description: "Warm lanterns, grained wooden floors and ivory screens around classic green felt.",
     palette: { primary: "#e6d3a7", secondary: "#8b7156", accent: "#e9bc70", background: "#625348", table: "#513325" },
     ambientColor: "#fff1d6", sunColor: "#fff1d6", sunIntensity: 0.8, sunPosition: [5, 10, 5],
-    tableColor: "#1b4d2e", tableType: "pagoda", fogColor: "#625348", fogIntensity: 0.02, hasProps: true,
+    tableColor: "#1b4d2e", tableType: "pagoda", fogColor: "#625348", fogIntensity: 0.02, hasProps: true, roomKind: "tea_house", matchEffect: "jade",
   },
   {
     id: "cyberpunk", name: "Neon Skyline Lounge",
     description: "Brushed metal decking, cyan light columns and luminous architectural screens.",
     palette: { primary: "#55eaff", secondary: "#697b94", accent: "#55eaff", background: "#173044", table: "#223442" },
     ambientColor: "#a4dfff", sunColor: "#c4eaff", sunIntensity: 0.8, sunPosition: [5, 10, 5],
-    tableColor: "#1b4d2e", tableType: "parlor", fogColor: "#173044", fogIntensity: 0.02, hasProps: true,
+    tableColor: "#1b4d2e", tableType: "parlor", fogColor: "#173044", fogIntensity: 0.02, hasProps: true, roomKind: "cyber_rooftop", matchEffect: "lightning",
   },
   {
     id: "temple_courtyard",
@@ -59,6 +61,7 @@ export const ENVIRONMENTS: MapTheme[] = [
     fogColor: "#1a1a2e",
     fogIntensity: 0.3,
     hasProps: true,
+      roomKind: "cloud_temple", matchEffect: "cloud",
   },
   {
     id: "nature_stump",
@@ -80,6 +83,7 @@ export const ENVIRONMENTS: MapTheme[] = [
     fogColor: "#0d2818",
     fogIntensity: 0.5,
     hasProps: true,
+    roomKind: "rain_garden", matchEffect: "petals",
   },
   {
     id: "mystic_sanctuary",
@@ -102,6 +106,7 @@ export const ENVIRONMENTS: MapTheme[] = [
     fogIntensity: 0.4,
     hasProps: true,
     hasFlames: true,
+    roomKind: "space_station", matchEffect: "starlight",
   },
   {
     id: "spotlight_parlor",
@@ -124,6 +129,7 @@ export const ENVIRONMENTS: MapTheme[] = [
     fogIntensity: 0.2,
     hasProps: false,
     hasSpotlights: true,
+    roomKind: "golden_parlor", matchEffect: "gold",
   },
 ];
 

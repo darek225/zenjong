@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useInventory } from "../../hooks/useInventory";
 import type { OwnedItem } from "../../lib/inventory";
+import type { LocalProfile } from "../../lib/progression";
+import { LOCAL_CATALOG, buyLocalItem, equipLocalItem, saveProfile } from "../../lib/progression";
 export type { OwnedItem, ShopItem } from "../../lib/inventory";
 
 interface InventoryModalProps {
@@ -12,9 +14,11 @@ interface InventoryModalProps {
   onEquip?: (item: OwnedItem) => void;
   onUnequip?: (item: OwnedItem) => void;
   purchaseRefreshKey?: number;
+  localProfile?: LocalProfile;
+  onLocalProfileChange?: (profile: LocalProfile) => void;
 }
 
-export default function InventoryModal({ isOpen, onClose, userId, onEquip, onUnequip, purchaseRefreshKey = 0 }: InventoryModalProps) {
+export default function InventoryModal({ isOpen, onClose, userId, onEquip, onUnequip, purchaseRefreshKey = 0, localProfile, onLocalProfileChange }: InventoryModalProps) {
   const inventory = useInventory(isOpen, userId, purchaseRefreshKey);
   const [category, setCategory] = useState("tileset");
   const [view, setView] = useState("inventory");
@@ -27,7 +31,8 @@ export default function InventoryModal({ isOpen, onClose, userId, onEquip, onUne
   }, [isOpen]);
   if (!isOpen) return null;
   const button = "rounded-lg border border-amber-200/30 bg-white/5 px-4 py-2 text-sm hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-amber-200 disabled:opacity-40";
-  const items = (view === "inventory" ? inventory.owned : inventory.items).filter(item => item.item_type === category);
+  const localItems = LOCAL_CATALOG.map(item => ({ ...item, acquired_at: "local", isEquipped: localProfile?.equipped[item.item_type] === item.id }));
+  const items = (localProfile ? (view === "inventory" ? localItems.filter(item => localProfile.ownedItems.includes(item.id)) : localItems) : (view === "inventory" ? inventory.owned : inventory.items)).filter(item => item.item_type === category);
   return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm">
     <div ref={dialog} role="dialog" aria-modal="true" aria-labelledby="inventory-title" tabIndex={-1}
       className="flex max-h-[90dvh] w-full max-w-3xl flex-col rounded-2xl border border-amber-200/30 bg-slate-950 p-5 text-white shadow-2xl"
@@ -57,15 +62,24 @@ export default function InventoryModal({ isOpen, onClose, userId, onEquip, onUne
         {[["tileset", "Tilesets"], ["table_skin", "Table mats"], ["avatar", "Avatars"]].map(([id, label]) =>
           <button key={id} className={button} aria-pressed={category === id} onClick={() => setCategory(id)}>{label}</button>)}
       </nav>
-      {inventory.notice && <p role="status" className="mb-3 text-sm text-amber-200">{inventory.notice}</p>}
+      {inventory.notice && !localProfile && <p role="status" className="mb-3 text-sm text-amber-200">{inventory.notice}</p>}
       <div className="grid gap-3 overflow-y-auto sm:grid-cols-2">
         {items.map(item => {
-          const owned = inventory.owned.find(entry => entry.id === item.id);
+          const owned: OwnedItem | undefined = localProfile
+            ? (localProfile.ownedItems.includes(item.id) ? { ...item, acquired_at: "local", isEquipped: localProfile.equipped[item.item_type] === item.id } : undefined)
+            : inventory.owned.find(entry => entry.id === item.id);
           return <article key={item.id} className={`rounded-xl border p-4 ${owned?.isEquipped ? "border-amber-200/60 bg-amber-200/5" : "border-white/15 bg-white/5"}`}>
             <div aria-hidden="true" className="mb-3 flex h-16 items-center justify-center rounded-lg bg-emerald-950 text-3xl">{category === "avatar" ? "◉" : category === "table_skin" ? "🏛" : "🀄"}</div>
             <h3 className="font-semibold">{item.name}</h3>
             <p className="my-2 text-xs text-white/60">{owned?.isEquipped ? "Equipped" : owned ? "Owned" : `${item.price} ${item.currency_type}`}</p>
-            {owned ? <button className={`${button} w-full`} disabled={inventory.busy || inventory.loading} onClick={async () => {
+            {localProfile ? <button className={`${button} w-full`} onClick={() => {
+              const next = owned ? equipLocalItem(localProfile, item.id) : buyLocalItem(localProfile, item.id);
+              if (!next) return;
+              saveProfile(next); onLocalProfileChange?.(next);
+              if (!owned) return;
+              if (next.equipped[item.item_type] === item.id) onEquip?.({ ...item, acquired_at: "local", isEquipped: true });
+            }}>{owned ? (owned.isEquipped ? "Equipped" : "Equip") : `Buy for ${item.price} Jade`}</button>
+              : owned ? <button className={`${button} w-full`} disabled={inventory.busy || inventory.loading} onClick={async () => {
               const equipped = !owned.isEquipped;
               if (await inventory.equip(owned, equipped)) {
                 if (equipped) onEquip?.({ ...owned, isEquipped: true });

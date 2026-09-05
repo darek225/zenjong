@@ -16,6 +16,7 @@ interface MahjongTileProps {
   faceUp?: boolean;
   selected?: boolean;
   backColor?: string;
+  tileSet?: string;
   blocked?: boolean;
   onClick?: (tileId: string) => void;
   onHover?: (tileId: string, isHovering: boolean) => void;
@@ -29,6 +30,7 @@ export default function MahjongTile({
   faceUp = true,
   selected = false,
   backColor = "#1f6e3a",
+  tileSet = "default-jade",
   blocked = false,
   onClick,
   onHover,
@@ -46,11 +48,20 @@ export default function MahjongTile({
   );
 
   // Front face material with high-contrast texture and gold emissive on selection
+  const tilePalette = tileSet === "default-obsidian"
+    ? { face: "#f3ead7", ink: "#d7a84d", edge: backColor }
+    : tileSet === "cyberpunk-neon"
+      ? { face: "#dffaff", ink: "#16d7e8", edge: "#172b4a" }
+      : tileSet === "carved-walnut"
+        ? { face: "#f1dfbf", ink: "#6d351f", edge: "#5a2d1a" }
+        : tileSet === "frosted-glass"
+          ? { face: "#eafaff", ink: "#75b8d1", edge: "#5d8393" }
+          : { face: "#ffffff", ink: "#ffffff", edge: backColor };
   const frontMaterial = useMemo(
     () =>
       new THREE.MeshPhysicalMaterial({
         map: faceUp ? generateTileTexture(tileType) : getTileBackTexture(),
-        color: faceUp ? "#ffffff" : backColor,
+        color: faceUp ? tilePalette.face : tilePalette.edge,
         roughness: 0.5,
         metalness: 0,
         clearcoat: 0.3,
@@ -60,7 +71,7 @@ export default function MahjongTile({
           : new THREE.Color(0x000000),
         emissiveIntensity: selected ? 0.08 : 0.0,
       }),
-    [tileType, faceUp, selected, backColor]
+    [tileType, faceUp, selected, backColor, tileSet, tilePalette.face, tilePalette.edge]
   );
 
   // Side material with ivory tone and gold edge glow
@@ -68,7 +79,7 @@ export default function MahjongTile({
     () =>
       new THREE.MeshPhysicalMaterial({
         map: getTileBackTexture(),
-        color: backColor,
+        color: tilePalette.edge,
         roughness: 0.55,
         metalness: 0,
         clearcoat: 0.3,
@@ -78,7 +89,7 @@ export default function MahjongTile({
           : new THREE.Color(0x000000),
         emissiveIntensity: selected ? 0.35 : 0.0,
       }),
-    [backColor, selected]
+    [backColor, selected, tileSet, tilePalette.edge]
   );
 
   useEffect(() => () => geometry.dispose(), [geometry]);
@@ -134,7 +145,7 @@ export default function MahjongTile({
       <primitive attach="geometry" object={geometry} />
       <meshStandardMaterial
         attach="material-0"
-        color="#fdf6e3"
+        color={tilePalette.face}
         roughness={0.6}
         metalness={0.1}
         emissive={selected ? new THREE.Color(0xffd700) : new THREE.Color(0x000000)}
@@ -142,7 +153,7 @@ export default function MahjongTile({
       />
       <meshStandardMaterial
         attach="material-1"
-        color="#fdf6e3"
+        color={tilePalette.face}
         roughness={0.6}
         metalness={0.1}
         emissive={selected ? new THREE.Color(0xffd700) : new THREE.Color(0x000000)}
@@ -150,7 +161,7 @@ export default function MahjongTile({
       />
       <meshStandardMaterial
         attach="material-2"
-        color="#fdf6e3"
+        color={tilePalette.face}
         roughness={0.6}
         metalness={0.1}
         emissive={selected ? new THREE.Color(0xffd700) : new THREE.Color(0x000000)}
@@ -158,7 +169,7 @@ export default function MahjongTile({
       />
       <meshStandardMaterial
         attach="material-3"
-        color="#fdf6e3"
+        color={tilePalette.face}
         roughness={0.6}
         metalness={0.1}
         emissive={selected ? new THREE.Color(0xffd700) : new THREE.Color(0x000000)}
@@ -166,7 +177,7 @@ export default function MahjongTile({
       />
       <primitive attach="material-4" object={frontMaterial} />
       <primitive attach="material-5" object={sideMaterial} />
-      {selected && !blocked && <Edges scale={1.015} threshold={35} color="#ffe6a0" raycast={() => null} />}
+      {selected && !blocked && <Edges scale={1.015} threshold={35} color={tilePalette.ink === "#ffffff" ? "#ffe6a0" : tilePalette.ink} raycast={() => null} />}
     </mesh>
     </group>
     </group>

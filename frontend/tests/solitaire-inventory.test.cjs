@@ -17,6 +17,11 @@ function load(file) {
 const engine = load("solitaire.ts");
 const { safeJson } = load("safeJson.ts");
 const { parseItems, parseOwned, MOCK_DEFAULT_INVENTORY } = load("inventory.ts");
+const modes = load("gameModes.ts");
+const session = load("session.ts");
+const environments = load("environments.ts");
+const progression = load("progression.ts");
+const challenges = load("challenges.ts");
 const tile = (id, x, z = 0, layer = 0, face = "DOT_1") => ({ id, x, z, layer, face });
 
 test("144 unique tiles, traditional deck counts, reproducible seed", () => {
@@ -30,6 +35,100 @@ test("144 unique tiles, traditional deck counts, reproducible seed", () => {
     assert.ok(engine.findPair(state.tiles));
     assert.deepEqual(state, engine.createSolitaire(seed));
   }
+});
+test("all production layouts stay 144 tiles and produce verified deterministic deals", () => {
+  for (const layout of ["turtle", "fortress", "twin_peaks", "butterfly", "dragon", "garden"]) {
+    assert.equal(engine.createLayout(layout).length, 144);
+    const first = engine.createSolitaire(8848, layout);
+    const second = engine.createSolitaire(8848, layout);
+    assert.equal(first.verified, true);
+    assert.deepEqual(first, second);
+  }
+  assert.equal(modes.dailySeed(new Date("2026-09-05T12:00:00Z")), modes.dailySeed(new Date("2026-09-05T23:59:59Z")));
+  assert.notEqual(modes.dailySeed(new Date("2026-09-05T12:00:00Z")), modes.dailySeed(new Date("2026-09-06T00:00:00Z")));
+});
+test("session validation rejects corrupt saves and accepts a complete verified snapshot", () => {
+  const originalWindow = global.window;
+  const originalStorage = global.localStorage;
+  let stored = null;
+  global.window = {};
+  global.localStorage = {
+    getItem: () => stored,
+    setItem: (_key, value) => { stored = value; },
+    removeItem: () => { stored = null; },
+  };
+  try {
+    assert.equal(session.loadSession(), null);
+    const state = engine.createSolitaire(42, "garden");
+    session.saveSession({ version: 1, modeId: "classic", layoutId: "garden", seed: 42, elapsed: 12, savedAt: 1, state });
+    assert.equal(session.loadSession().state.seed, 42);
+    stored = JSON.stringify({ version: 1, modeId: "classic", layoutId: "garden", seed: 42, elapsed: 12, state: { ...state, verified: false } });
+    assert.equal(session.loadSession(), null);
+    session.clearSession(); assert.equal(stored, null);
+  } finally { global.window = originalWindow; global.localStorage = originalStorage; }
+});
+test("every production room has distinct geometry and a configured match effect", () => {
+  assert.equal(environments.ENVIRONMENTS.length, 6);
+  assert.equal(new Set(environments.ENVIRONMENTS.map(room => room.roomKind)).size, 6);
+  assert.equal(new Set(environments.ENVIRONMENTS.map(room => room.matchEffect)).size, 6);
+  for (const room of environments.ENVIRONMENTS) {
+    assert.ok(room.description.length > 20);
+    assert.ok(room.palette.background.startsWith("#"));
+  }
+});
+test("local shop purchases are Jade-bound, duplicate-safe, and equipment persists", () => {
+  let profile = { ...progression.DEFAULT_PROFILE, jade: 500 };
+  profile = progression.buyLocalItem(profile, "default-obsidian");
+  assert.ok(profile.ownedItems.includes("default-obsidian"));
+  assert.equal(profile.jade, 250);
+  assert.equal(progression.buyLocalItem(profile, "default-obsidian"), null);
+  profile = progression.equipLocalItem(profile, "default-obsidian");
+  assert.equal(profile.equipped.tileset, "default-obsidian");
+  assert.equal(progression.buyLocalItem(profile, "mystic_sanctuary"), null);
+});
+test("daily completion reward is idempotent for the same UTC date", () => {
+  const profile = { ...progression.DEFAULT_PROFILE, dailyClaim: "2026-09-05", jade: 100 };
+  const repeat = progression.awardWin(profile, 250, 9000, 300, "daily", "2026-09-05");
+  assert.equal(repeat.jade, 100);
+  const nextDay = progression.awardWin(repeat, 250, 9000, 300, "daily", "2026-09-06");
+  assert.equal(nextDay.jade, 350);
+  assert.ok(nextDay.achievements.includes("daily_challenge"));
+});
+test("solo rule presets enforce mode restrictions and journey unlocks require stars", () => {
+  const custom = modes.createSoloRules("custom", "dragon", 300);
+  assert.equal(custom.timeLimit, 300);
+  assert.equal(custom.hintsRemaining, 3);
+  assert.equal(custom.shufflesRemaining, 2);
+  assert.equal(custom.rewardEligible, false);
+  const daily = modes.createSoloRules("daily", "butterfly");
+  assert.equal(daily.hintsRemaining, 0);
+  assert.equal(daily.shufflesRemaining, 0);
+  assert.equal(daily.scoreMultiplier, 3);
+  assert.equal(progression.isJourneyStageUnlocked(progression.DEFAULT_PROFILE, "intro"), true);
+  assert.equal(progression.isJourneyStageUnlocked(progression.DEFAULT_PROFILE, "garden"), false);
+  const completed = { ...progression.DEFAULT_PROFILE, journey: { intro: { stars: 1, bestScore: 6000 } } };
+  assert.equal(progression.isJourneyStageUnlocked(completed, "garden"), true);
+});
+test("challenge codes round-trip safely and imported challenges are unranked", () => {
+  const code = challenges.encodeChallenge({ mode: "daily", layoutId: "butterfly", seed: 8848, timer: 900, ranked: true });
+  assert.equal(code, "ZJ1-DAILY-BUTTERFLY-8848-900");
+  const decoded = challenges.decodeChallenge(code);
+  assert.deepEqual(decoded, { mode: "custom", layoutId: "butterfly", seed: 8848, timer: 900, ranked: false });
+  assert.equal(challenges.decodeChallenge("ZJ1-DAILY-NOPE-1-900"), null);
+  assert.equal(challenges.decodeChallenge("ZJ1-DAILY-BUTTERFLY--900"), null);
+});
+test("daily records preserve personal bests and increment streak once", () => {
+  let profile = { ...progression.DEFAULT_PROFILE };
+  profile = progression.recordDailyResult(profile, "2026-09-05", 1, 4000, 500);
+  profile = progression.recordDailyResult(profile, "2026-09-05", 1, 3000, 600);
+  assert.equal(profile.dailyRecords["2026-09-05"].score, 4000);
+  assert.equal(profile.dailyRecords["2026-09-05"].time, 500);
+  assert.equal(profile.dailyStreak, 2);
+});
+test("profile settings migrate safely and keep accessibility defaults", () => {
+  assert.equal(progression.DEFAULT_PROFILE.settings.colorSafe, true);
+  assert.equal(progression.DEFAULT_PROFILE.settings.tutorialSeen, false);
+  assert.equal(progression.DEFAULT_PROFILE.settings.ambientEffects, true);
 });
 test("free rules enforce both sides and partial overhead overlap", () => {
   const center = tile("center", 0);

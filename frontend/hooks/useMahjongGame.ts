@@ -2,23 +2,28 @@
 
 import { useState, useEffect, useRef, useReducer, useMemo } from "react";
 import { createSolitaire, solitaireReducer, findPair, isFree } from "../lib/solitaire";
+import type { SolitaireLayoutId, SolitaireState } from "../lib/solitaire";
+import type { SoloRules } from "../lib/gameModes";
 import type { Room } from "colyseus.js";
 import { createColyseusClient, joinRoomWithRetry, leaveRoomSafely } from "../lib/colyseus";
 import { getWebSocketUrl, recordConnectionError } from "../lib/config";
 import { GameSnapshot, snapshotGameState, sortTileIds } from "../lib/networkState";
 
-export const useMahjongGame = (mode: "arcade" | "multiplayer" = "arcade") => {
+export const useMahjongGame = (mode: "arcade" | "multiplayer" = "arcade", layoutId: SolitaireLayoutId = "turtle", seed?: number, rules?: SoloRules) => {
   const [solitaire, dispatch] = useReducer(solitaireReducer, 1, createSolitaire);
   const [elapsed, setElapsed] = useState(0);
   const [paused, setPaused] = useState(false);
+  const [hintsRemaining, setHintsRemaining] = useState<number | null>(rules?.hintsRemaining ?? null);
+  const [shufflesRemaining, setShufflesRemaining] = useState<number | null>(rules?.shufflesRemaining ?? null);
   const freeIds = useMemo(() => new Set(solitaire.tiles.filter(tile => isFree(tile, solitaire.tiles)).map(tile => tile.id)), [solitaire.tiles]);
   const hasMoves = useMemo(() => !!findPair(solitaire.tiles), [solitaire.tiles]);
-  useEffect(() => { dispatch({ type: "new", seed: Date.now() }); }, []);
+  useEffect(() => { dispatch({ type: "new", seed: seed ?? Date.now(), layoutId }); }, [layoutId, seed]);
   useEffect(() => {
-    if (mode !== "arcade" || paused || !solitaire.tiles.length) return;
+    if (mode !== "arcade" || paused || !solitaire.tiles.length || (rules?.timeLimit !== null && rules?.timeLimit !== undefined && elapsed >= rules.timeLimit)) return;
     const timer = setInterval(() => setElapsed(value => value + 1), 1000);
     return () => clearInterval(timer);
-  }, [mode, paused, solitaire.tiles.length]);
+  }, [mode, paused, solitaire.tiles.length, rules?.timeLimit]);
+  useEffect(() => { setHintsRemaining(rules?.hintsRemaining ?? null); setShufflesRemaining(rules?.shufflesRemaining ?? null); }, [rules?.modeId, rules?.layoutId, rules?.hintsRemaining, rules?.shufflesRemaining]);
   const [room, setRoom] = useState<Room | null>(null);
   const [gameState, setGameState] = useState<GameSnapshot | null>(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -136,8 +141,10 @@ export const useMahjongGame = (mode: "arcade" | "multiplayer" = "arcade") => {
     declareWin: () => { if (isMyTurn) send("declare_win"); },
     solitaire, freeIds, hasMoves, elapsed, paused, setPaused,
     undo: () => { if (!paused) dispatch({ type: "undo" }); },
-    hint: () => { if (!paused) dispatch({ type: "hint" }); },
-    shuffle: () => { if (!paused) dispatch({ type: "shuffle", seed: Date.now() }); },
-    newGame: () => { dispatch({ type: "new", seed: Date.now() }); setElapsed(0); setPaused(false); },
+    hint: () => { if (!paused && (hintsRemaining === null || hintsRemaining > 0)) { dispatch({ type: "hint" }); if (hintsRemaining !== null) setHintsRemaining(value => Math.max(0, (value ?? 1) - 1)); } },
+    shuffle: () => { if (!paused && (shufflesRemaining === null || shufflesRemaining > 0)) { dispatch({ type: "shuffle", seed: Date.now() }); if (shufflesRemaining !== null) setShufflesRemaining(value => Math.max(0, (value ?? 1) - 1)); } },
+    hintsRemaining, shufflesRemaining, timeLimit: rules?.timeLimit ?? null,
+    newGame: (nextSeed = Date.now(), nextLayout = layoutId) => { dispatch({ type: "new", seed: nextSeed, layoutId: nextLayout }); setElapsed(0); setPaused(false); },
+    restoreSession: (state: SolitaireState, seconds: number) => { dispatch({ type: "restore", state }); setElapsed(Math.max(0, Math.floor(seconds))); setPaused(true); },
   };
 };

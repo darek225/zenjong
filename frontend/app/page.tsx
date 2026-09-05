@@ -1,80 +1,92 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import GameHUD from "./components/GameHUD";
 import InventoryModal from "./components/InventoryModal";
 import MapSelector from "./components/MapSelector";
+import ProgressionPanel from "./components/ProgressionPanel";
+import ChallengePanel from "./components/ChallengePanel";
+import SettingsPanel from "./components/SettingsPanel";
+import TutorialOverlay from "./components/TutorialOverlay";
 import { useMahjongGame } from "../hooks/useMahjongGame";
+import { createSoloRules, dailySeed, getSoloMode, LAYOUT_OPTIONS, SOLO_MODES, type SoloModeId } from "../lib/gameModes";
+import { awardWin, JOURNEY_STAGES, loadProfile, recordDailyResult, saveProfile, type LocalProfile } from "../lib/progression";
+import { dateKey, decodeChallenge, dailyChallenge, encodeChallenge } from "../lib/challenges";
 import type { OwnedItem } from "../lib/inventory";
+import { clearSession, loadSession, saveSession, type SavedSolitaireSession } from "../lib/session";
 
 const ZenjongCanvas = dynamic(() => import("./components/ZenjongCanvas"), { ssr: false });
+type Screen = "title" | "setup" | "game" | "results";
+function formatTime(seconds: number) { return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`; }
 
 export default function Home() {
-  const [mode, setMode] = useState<"arcade" | "multiplayer">("arcade");
-  const game = useMahjongGame(mode);
+  const [screen, setScreen] = useState<Screen>("title");
+  const [modeId, setModeId] = useState<SoloModeId>("classic");
+  const [gameMode, setGameMode] = useState<"arcade" | "multiplayer">("arcade");
+  const [layoutId, setLayoutId] = useState(getSoloMode("classic").layoutId);
+  const [seed, setSeed] = useState(() => Date.now());
+  const [profile, setProfile] = useState<LocalProfile>(loadProfile);
   const [inventoryOpen, setInventoryOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [tutorialOpen, setTutorialOpen] = useState(false);
+  const [progressionOpen, setProgressionOpen] = useState(false);
+  const [journeyStageId, setJourneyStageId] = useState<string | null>(null);
+  const [customTimer, setCustomTimer] = useState<0 | 300 | 600 | 1200>(0);
+  const [customSeed, setCustomSeed] = useState("");
+  const [importCode, setImportCode] = useState("");
+  const [importError, setImportError] = useState("");
+  const [importedChallenge, setImportedChallenge] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
-  const [selectedMapId, setSelectedMapId] = useState("classic_green");
+  const [selectedMapId, setSelectedMapId] = useState(() => loadProfile().equipped.table_skin || "classic_green");
   const [topDown, setTopDown] = useState(false);
   const [backColor, setBackColor] = useState("#1f6e3a");
-  const [avatar, setAvatar] = useState("Jade Scholar");
-  const arcade = mode === "arcade";
-  const won = arcade && game.solitaire.tiles.length === 0;
-  const players = Array.from(game.gameState?.players ?? []).map(([sessionId, player]) => ({
-    ...player, sessionId, isCurrentTurn: sessionId === game.currentTurn, isMe: sessionId === game.room?.sessionId,
-  }));
-  const equip = (item: OwnedItem) => {
-    if (item.item_type === "table_skin") setSelectedMapId(item.id);
-    if (item.item_type === "tileset") setBackColor(item.id === "default-obsidian" ? "#302922" : "#1f6e3a");
-    if (item.item_type === "avatar") setAvatar(item.name);
-  };
-  return <main className="min-h-screen bg-slate-950 text-white">
-    <header className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
-      <h1 className="text-lg font-semibold tracking-widest text-amber-100">ZENJONG <span className="text-xs tracking-normal text-white/50">· {avatar}</span></h1>
-      <nav aria-label="Game mode" className="flex gap-2 text-sm">
-        <button className="rounded border border-white/20 px-3 py-2" aria-pressed={arcade} onClick={() => setMode("arcade")}>Solitaire</button>
-        <button className="rounded border border-white/20 px-3 py-2" aria-pressed={!arcade} onClick={() => setMode("multiplayer")}>Multiplayer</button>
-      </nav>
-    </header>
-    <section aria-label="Mahjong table" className="relative h-[calc(100dvh-5rem)] min-h-[650px]">
-      <ZenjongCanvas myTiles={game.myTiles} discardPile={arcade ? [] : game.discardPile}
-        selectedTiles={game.selectedTiles} onTileClick={game.toggleTileSelection} onTileHover={() => {}}
-        isMyTurn={!arcade && game.isMyTurn} discardTile={game.discardTile}
-        selectedMapId={selectedMapId} isDualCamera={topDown}
-        board={arcade ? game.solitaire.tiles : undefined} freeIds={game.freeIds}
-        reaction={game.solitaire.reaction} revision={game.solitaire.revision}
-        paused={game.paused || inventoryOpen || mapOpen} backColor={backColor} />
-      <GameHUD hudState="IN_GAME" gameMode={mode} isConnected={game.isConnected}
-        remainingTiles={arcade ? game.solitaire.tiles.length : game.gameState?.wall.remaining ?? 0}
-        activeScore={arcade ? game.solitaire.score : players.find(player => player.isMe)?.score ?? 0}
-        timeRemaining={game.elapsed} combo={game.solitaire.combo} pairsRemaining={game.solitaire.tiles.length / 2}
-        arcadeActionsEnabled={arcade && !game.paused && !won}
-        onUndo={game.undo} onHint={game.hint} onShuffle={game.shuffle}
-        onDeclareWin={game.declareWin} onOpenInventory={() => setInventoryOpen(true)}
-        players={players} currentTurn={game.currentTurn} turnTimeLeft={game.turnTimeLeft} isMyTurn={game.isMyTurn}
-        selectedMapId={selectedMapId} onSelectMap={setSelectedMapId} onToggleCamera={() => setTopDown(value => !value)}
-        mapSelectorOpen={mapOpen} onOpenMapSelector={() => setMapOpen(true)} onCloseMapSelector={() => setMapOpen(false)}
-        onStartGame={arcade ? game.newGame : undefined} paused={game.paused}
-        onTogglePause={arcade ? () => game.setPaused(value => !value) : undefined} />
-      {arcade && (won || game.paused || !game.hasMoves) && <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center">
-        <div role="status" className="pointer-events-auto max-w-sm rounded-2xl border border-amber-200/40 bg-slate-950/95 p-6 text-center shadow-xl">
-          <h2 className="mb-2 text-2xl text-amber-100">{won ? "Table cleared" : game.paused ? "Take a breath" : "No free pairs"}</h2>
-          <p className="mb-4 text-sm text-white/70">{won ? `72 pairs · ${game.solitaire.score.toLocaleString()} points` : game.paused ? "Your hand is waiting." : "Shuffle the remaining tiles or undo your last move."}</p>
-          <button className="rounded-lg bg-emerald-800 px-4 py-2" onClick={won ? game.newGame : game.paused ? () => game.setPaused(false) : game.shuffle}>
-            {won ? "New hand" : game.paused ? "Resume" : "Shuffle"}
-          </button>
-          {!won && !game.paused && <button className="ml-2 rounded-lg border border-white/20 px-4 py-2" onClick={game.undo}>Undo</button>}
-        </div>
-      </div>}
-      {!arcade && !game.isConnected && <p role="status" className="absolute bottom-16 left-1/2 z-20 -translate-x-1/2 rounded-lg bg-slate-950/90 p-3 text-center text-sm">Connecting to multiplayer. Solitaire is available without a server.</p>}
-    </section>
-    <MapSelector isOpen={mapOpen} onClose={() => setMapOpen(false)} selectedMapId={selectedMapId} onSelectMap={setSelectedMapId} />
-    <InventoryModal isOpen={inventoryOpen} onClose={() => setInventoryOpen(false)} userId={game.room?.sessionId ?? "guest"}
-      onEquip={equip} onUnequip={item => {
-        if (item.item_type === "tileset") setBackColor("#1f6e3a");
-        if (item.item_type === "table_skin") setSelectedMapId("classic_green");
-        if (item.item_type === "avatar") setAvatar("Guest");
-      }} />
-  </main>;
+  const [tileSet, setTileSet] = useState(() => loadProfile().equipped.tileset || "default-jade");
+  const [resultSaved, setResultSaved] = useState(false);
+  const [savedSession, setSavedSession] = useState<SavedSolitaireSession | null>(() => loadSession());
+  const [restorePending, setRestorePending] = useState<SavedSolitaireSession | null>(null);
+  const mode = getSoloMode(modeId);
+  const rules = createSoloRules(modeId, layoutId, modeId === "custom" ? customTimer : undefined);
+  const game = useMahjongGame(gameMode, layoutId, seed, rules);
+  const won = game.solitaire.tiles.length === 0;
+  const timedOut = rules.timeLimit !== null && game.elapsed >= rules.timeLimit && !won;
+  const failed = !game.hasMoves && !won;
+  const gameOver = gameMode === "arcade" && (won || timedOut || failed);
+  useEffect(() => { if (screen === "game" && gameOver) setScreen("results"); }, [screen, gameOver]);
+  useEffect(() => {
+    if (screen !== "game" || !restorePending) return;
+    game.restoreSession(restorePending.state, restorePending.elapsed);
+    setRestorePending(null);
+  }, [screen, restorePending]);
+  useEffect(() => {
+    if (screen !== "game" || gameMode !== "arcade" || gameOver || !game.solitaire.verified) return;
+    const session: SavedSolitaireSession = { version: 1, modeId, layoutId, seed: game.solitaire.seed,
+      elapsed: game.elapsed, savedAt: Date.now(), state: game.solitaire };
+    saveSession(session); setSavedSession(session);
+  }, [screen, gameMode, gameOver, modeId, layoutId, game.solitaire, game.elapsed]);
+  useEffect(() => { if (screen === "results") { clearSession(); setSavedSession(null); } }, [screen]);
+  useEffect(() => { if (screen === "results" && !resultSaved && won) { const today = dateKey(); let next = awardWin(profile, rules.rewardEligible && !importedChallenge ? mode.reward : 0, Math.round(game.solitaire.score * rules.scoreMultiplier), game.elapsed, importedChallenge ? "custom" : modeId, today); if (modeId === "daily" && !importedChallenge) next = recordDailyResult(next, today, game.solitaire.seed, game.solitaire.score, game.elapsed); if (journeyStageId) { const stage = JOURNEY_STAGES.find(item => item.id === journeyStageId); if (stage && game.solitaire.score >= stage.target && !next.journey[stage.id]) next = { ...next, jade: next.jade + stage.reward, xp: next.xp + stage.reward, journey: { ...next.journey, [stage.id]: { stars: game.elapsed <= 600 ? 3 : game.elapsed <= 900 ? 2 : 1, bestScore: game.solitaire.score } } }; } setProfile(next); saveProfile(next); setResultSaved(true); } }, [screen, resultSaved, won, profile, rules, mode, modeId, importedChallenge, journeyStageId, game.solitaire.score, game.elapsed]);
+  const start = (nextMode: SoloModeId = modeId, customSeed?: number) => { clearSession(); setSavedSession(null); setGameMode("arcade"); setModeId(nextMode); setSeed(customSeed ?? (nextMode === "daily" ? dailySeed() : Date.now())); setResultSaved(false); setScreen("game"); };
+  const startJourney = (stageLayout: string, stageId: string) => { const stage = LAYOUT_OPTIONS.find(layout => layout.id === stageLayout); if (!stage) return; setJourneyStageId(stageId); setLayoutId(stage.id); setProgressionOpen(false); start("journey"); };
+  const startCustom = () => { const parsed = customSeed.trim() ? Number(customSeed) : Date.now(); setImportedChallenge(false); start("custom", Number.isFinite(parsed) ? parsed : Date.now()); };
+  const startDaily = () => { setImportedChallenge(false); setLayoutId("butterfly"); start("daily", dailySeed()); };
+  const importChallenge = () => { const challenge = decodeChallenge(importCode); if (!challenge) { setImportError("Invalid challenge code."); return; } setImportError(""); setImportedChallenge(true); setLayoutId(challenge.layoutId); setCustomTimer((challenge.timer ?? 0) as 0 | 300 | 600 | 1200); start("custom", challenge.seed); };
+  const resume = () => { if (!savedSession) return; setGameMode("arcade"); setModeId(savedSession.modeId); setLayoutId(savedSession.layoutId); setSeed(savedSession.seed); setRestorePending(savedSession); setScreen("game"); };
+  const saveAndExit = () => { game.setPaused(true); setScreen("title"); };
+  const restart = () => { clearSession(); setSavedSession(null); game.newGame(Date.now(), layoutId); };
+  const equip = (item: OwnedItem) => { if (item.item_type === "table_skin") setSelectedMapId(item.id); if (item.item_type === "tileset") { setTileSet(item.id); setBackColor(item.id === "default-obsidian" ? "#302922" : "#1f6e3a"); } };
+  const updateLocalProfile = (next: LocalProfile) => { setProfile(next); const equipped = next.equipped; if (equipped.table_skin) setSelectedMapId(equipped.table_skin); if (equipped.tileset) { setTileSet(equipped.tileset); setBackColor(equipped.tileset === "default-obsidian" ? "#302922" : "#1f6e3a"); } };
+  const updateSettings = (next: LocalProfile) => { setProfile(next); saveProfile(next); };
+  const finishTutorial = () => { const next = { ...profile, settings: { ...profile.settings, tutorialSeen: true } }; setProfile(next); saveProfile(next); setTutorialOpen(false); };
+  const button = "rounded-xl border border-amber-200/25 bg-white/10 px-5 py-3 text-sm font-semibold text-amber-50 transition hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300";
+
+  if (screen === "title") return <main className="min-h-screen overflow-hidden bg-[#091512] text-white"><div className="relative mx-auto flex min-h-screen max-w-6xl items-center px-6 py-12"><div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_35%,rgba(44,120,91,.34),transparent_45%),linear-gradient(120deg,#07110f,#152b24_55%,#07100e)]" /><div className="relative max-w-xl"><p className="mb-5 text-xs font-semibold uppercase tracking-[.45em] text-amber-200/70">A game of patience</p><h1 className="font-serif text-7xl font-semibold tracking-tight text-amber-50 sm:text-9xl">Zenjong</h1><p className="mt-6 max-w-md text-lg leading-8 text-white/65">A quiet, tactile Mahjong solitaire retreat. Clear the table, master the rooms, and make every match count.</p><ChallengePanel profile={profile} onDaily={startDaily} onImport={code => { setImportCode(code); importChallenge(); }} /><div className="mt-10 flex flex-wrap gap-3">{savedSession && <button className="rounded-xl bg-emerald-200 px-7 py-4 font-bold text-[#17251d] hover:bg-emerald-100" onClick={resume}>Continue session</button>}<button className="rounded-xl bg-amber-200 px-7 py-4 font-bold text-[#17251d] shadow-[0_10px_35px_rgba(245,196,95,.2)] hover:bg-amber-100" onClick={() => setScreen("setup")}>Begin a session</button><button className={button} onClick={() => { setGameMode("multiplayer"); setScreen("game"); }}>Multiplayer <span className="text-[10px] opacity-60">experimental</span></button><button className={button} onClick={() => setProgressionOpen(true)}>Journey</button><button className={button} onClick={() => setSettingsOpen(true)}>Settings</button><button className={button} onClick={() => setTutorialOpen(true)}>How to play</button><button className={button} onClick={() => setInventoryOpen(true)}>Collection</button></div><div className="mt-12 flex gap-8 text-sm text-white/60"><span><strong className="block text-2xl text-amber-100">{profile.level}</strong>Level</span><span><strong className="block text-2xl text-amber-100">{profile.jade}</strong>Jade</span><span><strong className="block text-2xl text-amber-100">{profile.wins}</strong>Tables cleared</span></div></div></div>{progressionOpen && <ProgressionPanel profile={profile} onClose={() => setProgressionOpen(false)} onStartJourney={startJourney} />}{settingsOpen && <SettingsPanel profile={profile} onChange={updateSettings} onClose={() => setSettingsOpen(false)} />}{tutorialOpen && <TutorialOverlay onDone={finishTutorial} />}<InventoryModal isOpen={inventoryOpen} onClose={() => setInventoryOpen(false)} userId="guest" localProfile={profile} onLocalProfileChange={updateLocalProfile} onEquip={equip} /></main>;
+
+  if (screen === "setup") return <main className="min-h-screen bg-[#0b1512] px-4 py-8 text-white sm:px-8"><div className="mx-auto max-w-6xl"><header className="mb-8 flex items-center justify-between"><div><p className="text-xs uppercase tracking-[.35em] text-amber-200/60">Zenjong / prepare</p><h1 className="mt-2 font-serif text-4xl text-amber-50">Choose your table</h1></div><button className={button} onClick={() => setScreen("title")}>Back</button></header><div className="grid gap-8 lg:grid-cols-[1.2fr_.8fr]"><section><div className="grid gap-3 sm:grid-cols-2">{SOLO_MODES.map(option => <button key={option.id} onClick={() => { setModeId(option.id); setLayoutId(option.layoutId); }} className={`rounded-2xl border p-5 text-left transition ${modeId === option.id ? "border-amber-200 bg-amber-100/10" : "border-white/10 bg-white/[.03] hover:bg-white/[.07]"}`}><div className="flex items-center justify-between"><h2 className="font-semibold text-amber-50">{option.name}</h2><span className="text-xs text-emerald-300">{option.reward} Jade</span></div><p className="mt-2 text-sm leading-6 text-white/55">{option.description}</p>{option.timeLimit && <p className="mt-3 text-xs uppercase tracking-widest text-white/40">{formatTime(option.timeLimit)} limit</p>}</button>)}</div></section><aside className="rounded-2xl border border-white/10 bg-white/[.04] p-6"><p className="text-xs uppercase tracking-[.3em] text-white/40">Table shape</p><div className="mt-4 space-y-2">{LAYOUT_OPTIONS.map(layout => <button key={layout.id} onClick={() => setLayoutId(layout.id)} className={`w-full rounded-xl border p-3 text-left ${layoutId === layout.id ? "border-amber-200/70 bg-amber-100/10" : "border-white/10"}`}><span className="block text-sm text-amber-50">{layout.name}</span><span className="text-xs text-white/45">{layout.description}</span></button>)}</div>{modeId === "custom" && <div className="mt-5 space-y-3 rounded-xl border border-amber-200/15 bg-black/10 p-4"><label className="block text-xs uppercase tracking-widest text-white/50">Timer<select className="mt-2 w-full rounded-lg bg-slate-900 p-2 text-sm" value={customTimer} onChange={event => setCustomTimer(Number(event.target.value) as 0 | 300 | 600 | 1200)}><option value={0}>No timer</option><option value={300}>5 minutes</option><option value={600}>10 minutes</option><option value={1200}>20 minutes</option></select></label><label className="block text-xs uppercase tracking-widest text-white/50">Challenge seed<input className="mt-2 w-full rounded-lg bg-slate-900 p-2 text-sm" value={customSeed} onChange={event => setCustomSeed(event.target.value)} placeholder="Random verified seed" /></label><p className="text-xs text-white/40">Custom tables are offline and unranked.</p></div>}<button className="mt-6 w-full rounded-xl bg-amber-200 px-5 py-3 font-bold text-[#17251d]" onClick={() => modeId === "custom" ? startCustom() : start(modeId)}>Deal the tiles</button><p className="mt-3 text-center text-xs text-white/35">Every deal is deterministic and verified before play.</p></aside></div></div></main>;
+
+  if (screen === "results") return <main className="min-h-screen bg-[#0b1512] px-4 py-12 text-white"><div className="mx-auto max-w-lg rounded-3xl border border-amber-100/15 bg-white/[.05] p-8 text-center"><p className="text-xs uppercase tracking-[.35em] text-amber-200/60">Session complete</p><h1 className="mt-4 font-serif text-5xl text-amber-50">{won ? "A clear table" : timedOut ? "The lantern dims" : "No path remains"}</h1><p className="mt-3 text-white/55">{won ? "Your patience was rewarded." : "Replay the verified deal or return to the table selection."}</p><div className="my-8 grid grid-cols-2 gap-3 text-left"><div className="rounded-xl bg-black/20 p-4"><span className="text-xs text-white/40">Score</span><strong className="mt-1 block text-2xl text-amber-100">{game.solitaire.score.toLocaleString()}</strong></div><div className="rounded-xl bg-black/20 p-4"><span className="text-xs text-white/40">Time</span><strong className="mt-1 block text-2xl text-amber-100">{formatTime(game.elapsed)}</strong></div><div className="rounded-xl bg-black/20 p-4"><span className="text-xs text-white/40">Seed</span><strong className="mt-1 block truncate text-sm text-amber-100">{game.solitaire.seed}</strong></div><div className="rounded-xl bg-black/20 p-4"><span className="text-xs text-white/40">Jade earned</span><strong className="mt-1 block text-2xl text-emerald-300">{won ? mode.reward : 0}</strong></div></div><div className="flex flex-wrap justify-center gap-3"><button className={button} onClick={() => { setResultSaved(false); setScreen("setup"); }}>Choose another table</button><button className="rounded-xl bg-amber-200 px-5 py-3 font-bold text-[#17251d]" onClick={() => { setResultSaved(false); setScreen("game"); }}>Replay deal</button></div></div></main>;
+
+  const players = Array.from(game.gameState?.players ?? []).map(([sessionId, player]) => ({ ...player, sessionId, isCurrentTurn: sessionId === game.currentTurn, isMe: sessionId === game.room?.sessionId }));
+  const isArcade = gameMode === "arcade";
+  return <main className="min-h-screen bg-slate-950 text-white"><header className="flex flex-wrap items-center justify-between gap-2 px-4 py-3"><button className="font-serif text-xl tracking-widest text-amber-100" onClick={saveAndExit}>ZENJONG</button><div className="flex items-center gap-3 text-xs text-white/60"><span>{isArcade ? `Lv ${profile.level}` : "Experimental multiplayer"}</span>{isArcade && <span className="text-emerald-300">◆ {profile.jade}</span>}<button className={button} onClick={() => setProgressionOpen(true)}>Journey</button><button className={button} onClick={() => setSettingsOpen(true)}>Settings</button><button className={button} onClick={() => setTutorialOpen(true)}>How to play</button><button className={button} onClick={() => setInventoryOpen(true)}>Collection</button></div></header><section aria-label="Mahjong table" className="relative h-[calc(100dvh-5rem)] min-h-[650px]"><ZenjongCanvas myTiles={game.myTiles} discardPile={isArcade ? [] : game.discardPile} selectedTiles={game.selectedTiles} onTileClick={game.toggleTileSelection} onTileHover={() => {}} isMyTurn={!isArcade && game.isMyTurn} discardTile={game.discardTile} selectedMapId={selectedMapId} isDualCamera={topDown} board={isArcade ? game.solitaire.tiles : undefined} freeIds={game.freeIds} reaction={game.solitaire.reaction} revision={game.solitaire.revision} reducedMotion={profile.settings.reducedMotion} ambientEffects={profile.settings.ambientEffects} paused={game.paused || inventoryOpen || mapOpen || gameOver} backColor={backColor} tileSet={tileSet} /><GameHUD hudState="IN_GAME" gameMode={gameMode} isConnected={game.isConnected} remainingTiles={isArcade ? game.solitaire.tiles.length : game.gameState?.wall.remaining ?? 0} activeScore={isArcade ? game.solitaire.score : players.find(player => player.isMe)?.score ?? 0} timeRemaining={game.elapsed} combo={game.solitaire.combo} pairsRemaining={game.solitaire.tiles.length / 2} arcadeActionsEnabled={isArcade && !game.paused && !gameOver} onUndo={game.undo} onHint={isArcade && mode.assistance ? game.hint : () => {}} onShuffle={game.shuffle} onDeclareWin={game.declareWin} onOpenInventory={() => setInventoryOpen(true)} players={players} currentTurn={game.currentTurn} turnTimeLeft={game.turnTimeLeft} isMyTurn={game.isMyTurn} selectedMapId={selectedMapId} onSelectMap={setSelectedMapId} onToggleCamera={() => setTopDown(value => !value)} mapSelectorOpen={mapOpen} onOpenMapSelector={() => setMapOpen(true)} onCloseMapSelector={() => setMapOpen(false)} onStartGame={restart} paused={game.paused} onTogglePause={isArcade ? () => game.setPaused(value => !value) : undefined} /><div className="absolute left-4 top-4 z-20 rounded-full bg-black/35 px-3 py-1 text-xs text-white/60">{isArcade ? `${mode.name} · ${LAYOUT_OPTIONS.find(item => item.id === layoutId)?.name} · verified seed ${game.solitaire.seed}` : "Experimental multiplayer · server connection required"}</div>{isArcade && game.paused && <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/60 p-4"><div role="dialog" aria-modal="true" aria-labelledby="pause-title" className="w-full max-w-sm rounded-2xl border border-amber-100/20 bg-[#101c18] p-6 text-center shadow-2xl"><p className="text-xs uppercase tracking-[.35em] text-amber-200/60">Session saved automatically</p><h2 id="pause-title" className="mt-3 font-serif text-4xl text-amber-50">Paused</h2><div className="mt-6 grid gap-2"><button className="rounded-xl bg-amber-200 px-5 py-3 font-bold text-[#17251d]" onClick={() => game.setPaused(false)}>Resume</button><button className={button} onClick={saveAndExit}>Save &amp; exit</button><button className={button} onClick={restart}>Restart hand</button><button className="text-sm text-white/45 hover:text-white" onClick={() => { clearSession(); setSavedSession(null); setScreen("title"); }}>Discard save &amp; exit</button></div></div></div>}</section><MapSelector isOpen={mapOpen} onClose={() => setMapOpen(false)} selectedMapId={selectedMapId} onSelectMap={setSelectedMapId} />{progressionOpen && <ProgressionPanel profile={profile} onClose={() => setProgressionOpen(false)} onStartJourney={startJourney} />}{settingsOpen && <SettingsPanel profile={profile} onChange={updateSettings} onClose={() => setSettingsOpen(false)} />}{tutorialOpen && <TutorialOverlay onDone={finishTutorial} />}<InventoryModal isOpen={inventoryOpen} onClose={() => setInventoryOpen(false)} userId={game.room?.sessionId ?? "guest"} localProfile={isArcade ? profile : undefined} onLocalProfileChange={updateLocalProfile} onEquip={equip} /></main>;
 }
