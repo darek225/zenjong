@@ -41,16 +41,21 @@ export const useMahjongGame = () => {
           const hand = snapshot?.players.get(joined.sessionId)?.hand ?? [];
           setSelectedTiles(previous => previous.filter(id => hand.some(tile => tile.id === id)));
         };
-        unsubscribers.push(joined.onStateChange(update));
-        unsubscribers.push(joined.onError((code, message) => {
+        joined.onStateChange(update);
+        unsubscribers.push(() => { joined.onStateChange.remove(update); });
+        const handleError = (code: number, message?: string) => {
           if (controller.signal.aborted || roomRef.current !== joined) return;
           recordConnectionError(message || `Room error ${code}`, getWebSocketUrl() ?? "offline");
           reset();
           void leaveRoomSafely(joined);
-        }));
-        unsubscribers.push(joined.onLeave(() => {
+        };
+        joined.onError(handleError);
+        unsubscribers.push(() => { joined.onError.remove(handleError); });
+        const handleLeave = () => {
           if (!controller.signal.aborted && roomRef.current === joined) reset();
-        }));
+        };
+        joined.onLeave(handleLeave);
+        unsubscribers.push(() => { joined.onLeave.remove(handleLeave); });
         update(joined.state);
       } catch (error) {
         if (controller.signal.aborted) return;
