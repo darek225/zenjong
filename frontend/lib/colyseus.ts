@@ -5,6 +5,31 @@ import Config from "./config";
 import { showConnectionToast } from "./config";
 
 /**
+ * Resolve WebSocket endpoint with production-safe fallback
+ * - Uses NEXT_PUBLIC_SOCKET_URL if set (preferred for production)
+ * - Returns null for production hosts if not configured (prevents ERR_CONNECTION_REFUSED)
+ * - Falls back to ws://localhost:2567 only in development
+ */
+const getWebSocketEndpoint = (): string | null => {
+  // Preferred: explicit env var (works in both client and server)
+  if (process.env.NEXT_PUBLIC_SOCKET_URL) {
+    return process.env.NEXT_PUBLIC_SOCKET_URL;
+  }
+  // Next.js exposes NEXT_PUBLIC_* on the client via NEXT_PUBLIC_* vars injected at build time
+  if (typeof window !== "undefined") {
+    const isLocalHost =
+      window.location.hostname === "localhost" ||
+      window.location.hostname === "127.0.0.1";
+    // In production, never default to a hardcoded localhost — disable gracefully
+    if (!isLocalHost) {
+      return null;
+    }
+  }
+  // Development fallback only
+  return "ws://localhost:2567";
+};
+
+/**
  * Create a Colyseus client with centralized environment configuration
  * Uses NEXT_PUBLIC_COLYSEUS_URL for production deployment with graceful fallbacks
  */
@@ -14,7 +39,16 @@ export const createColyseusClient = (): Client => {
   }
 
   // Use centralized config with fallback strategy
-  const url = Config.getWebSocketUrl?.(true) || "ws://localhost:2567";
+  let url: string | null = Config.getWebSocketUrl?.(true) ?? null;
+  if (!url || url === "ws://localhost:2567") {
+    url = getWebSocketEndpoint();
+  }
+  if (!url) {
+    const msg = "No WebSocket endpoint configured. Set NEXT_PUBLIC_SOCKET_URL to enable multiplayer.";
+    Config.showConnectionToast?.(msg);
+    Config.recordConnectionError?.(msg, "unconfigured");
+    throw new Error(msg);
+  }
 
   console.info(`[Config] Connecting to WebSocket: ${url}`);
 
@@ -70,9 +104,12 @@ export const joinRoomWithRetry = async (
  */
 export const leaveRoomSafely = async (room: any): Promise<void> => {
   if (!room) return;
-  try {
-    await room.leave();
-  } catch (error) {
-    console.warn("[Colyseus] Error leaving room:", error);
+  // Safely exit room without throwing if the room is not a valid Room instance
+  if (typeof room.leave === 'function') {
+    try {
+      await room.leave();
+    } catch (error) {
+      console.warn("[Colyseus] Error leaving room:", error);
+    }
   }
 };

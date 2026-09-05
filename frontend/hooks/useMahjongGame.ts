@@ -24,9 +24,9 @@ export const useMahjongGame = () => {
 
   useEffect(() => {
     return () => {
-      if (clientRef.current) {
-        leaveRoomSafely(clientRef.current).catch(() => {});
-        clientRef.current = null;
+      if (roomRef.current) {
+        leaveRoomSafely(roomRef.current).catch(() => {});
+        roomRef.current = null;
       }
     };
   }, []);
@@ -125,8 +125,8 @@ export const useMahjongGame = () => {
     return () => {
       isMounted = false;
       if (clientRef.current) {
-        leaveRoomSafely(clientRef.current).catch(() => {});
-        clientRef.current = null;
+        leaveRoomSafely(roomRef.current).catch(() => {});
+        roomRef.current = null;
       }
     };
   }, []);
