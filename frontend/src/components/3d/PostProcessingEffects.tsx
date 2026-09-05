@@ -1,6 +1,7 @@
 import { EffectComposer } from "@react-three/postprocessing";
 import { Bloom, Vignette, ChromaticAberration } from "@react-three/postprocessing";
 import { BlendFunction } from "postprocessing";
+import { Vector2 } from "three";
 
 export interface PostProcessingConfig {
   bloomIntensity: number;
@@ -37,7 +38,9 @@ export function PostProcessingEffects(props: { config?: PostProcessingConfig; en
         darkness={cfg.vignetteDarkness}
       />
       <ChromaticAberration
-        offset={[cfg.chromaticAberration, cfg.chromaticAberration]}
+        offset={new Vector2(cfg.chromaticAberration, cfg.chromaticAberration)}
+        radialModulation={false}
+        modulationOffset={0}
       />
     </EffectComposer>
   );
