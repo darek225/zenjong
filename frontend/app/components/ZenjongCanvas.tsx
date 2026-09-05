@@ -1,18 +1,26 @@
 import { Canvas, useThree, useFrame } from "@react-three/fiber";
-import { OrbitControls, ContactShadows } from "@react-three/drei";
+import { OrbitControls } from "@react-three/drei";
 import { PostProcessingEffects } from "../../src/components/3d/PostProcessingEffects";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { ACESFilmicToneMapping } from "three";
 import * as THREE from "three";
 import MahjongTile from "./MahjongTile";
-import EnvironmentStage from "./environments/EnvironmentStage";
+import ProceduralRoom from "./environments/ProceduralRoom";
+import MatchReaction from "./MatchReaction";
+import type { SolitaireTile } from "../../lib/solitaire";
 import AmbientParticles from "./environments/AmbientParticles";
 import BrazierFlames from "./environments/BrazierFlames";
 import SpotlightBeams from "./environments/SpotlightBeams";
 import { ENVIRONMENTS, MapTheme } from "../../lib/environments";
-import { getTileType } from "../../lib/networkState";
+import { getTileType, sortTileIds } from "../../lib/networkState";
 
 interface ZenjongCanvasProps {
+  board?: SolitaireTile[];
+  freeIds?: Set<string>;
+  reaction?: SolitaireTile[];
+  revision?: number;
+  paused?: boolean;
+  backColor?: string;
   children?: React.ReactNode;
   myTiles: string[];
   discardPile: string[];
@@ -30,7 +38,7 @@ interface ZenjongCanvasProps {
 
 const CAMERA_PRESETS: Record<string, { position: [number, number, number]; fov: number }> = {
   TOP_DOWN: { position: [0, 24, 0.1], fov: 50 },
-  ISO_3D: { position: [12, 14, 16], fov: 50 },
+  ISO_3D: { position: [0, 15, 12], fov: 45 },
   LOW_ARCADE: { position: [0, 6, 14], fov: 50 },
 };
 
@@ -99,9 +107,9 @@ function TouchGestureHandler() {
 
   const resetCamera = useCallback(() => {
     if (camera instanceof THREE.PerspectiveCamera) {
-      camera.position.set(0, 16, 18);
+      camera.position.set(0, 15, 12);
       camera.lookAt(0, 0, 0);
-      camera.fov = 50;
+      camera.fov = 45;
       camera.updateProjectionMatrix();
     }
   }, [camera]);
@@ -239,6 +247,8 @@ function TouchGestureHandler() {
 function CameraPresetHandler({ onCameraPresetChange }: { onCameraPresetChange?: (preset: string) => void }) {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLElement &&
+        (e.target.isContentEditable || /INPUT|TEXTAREA|SELECT/.test(e.target.tagName))) return;
       if (e.key === "1") onCameraPresetChange?.("TOP_DOWN");
       if (e.key === "2") onCameraPresetChange?.("ISO_3D");
       if (e.key === "3") onCameraPresetChange?.("LOW_ARCADE");
@@ -246,6 +256,25 @@ function CameraPresetHandler({ onCameraPresetChange }: { onCameraPresetChange?: 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [onCameraPresetChange]);
+  return null;
+}
+
+function CameraRig({ preset }: { preset: string }) {
+  const { camera, size } = useThree();
+  useEffect(() => {
+    if (!(camera instanceof THREE.PerspectiveCamera)) return;
+    const config = CAMERA_PRESETS[preset] ?? CAMERA_PRESETS.ISO_3D;
+    camera.position.set(...config.position);
+    camera.fov = config.fov;
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+  }, [camera, preset]);
+  useEffect(() => {
+    if (!(camera instanceof THREE.PerspectiveCamera)) return;
+    // Preserve the specified pose/FOV while fitting a full rack on portrait screens.
+    camera.zoom = Math.min(1, size.width / Math.max(1, size.height) / 1.25);
+    camera.updateProjectionMatrix();
+  }, [camera, size.width, size.height]);
   return null;
 }
 
@@ -262,6 +291,7 @@ function ShakeEffect({ intensity }: { intensity: number }) {
 }
 
 export default function ZenjongCanvas({
+  board, freeIds, reaction = [], revision = 0, paused = false, backColor,
   children, myTiles, discardPile, selectedTiles,
   onTileClick, onTileHover, isMyTurn, discardTile,
   selectedMapId, isDualCamera, currentCameraPreset, onCameraPresetChange, triggerShake,
@@ -269,7 +299,7 @@ export default function ZenjongCanvas({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isClient, setIsClient] = useState(false);
   const [contextLost, setContextLost] = useState(false);
-  const validTiles = (myTiles ?? []).filter(id => typeof id === "string" && getTileType(id));
+  const validTiles = sortTileIds(myTiles ?? []);
   const validDiscards = (discardPile ?? []).filter(id => typeof id === "string" && getTileType(id));
   useEffect(() => { setIsClient(true); }, []);
 
@@ -277,29 +307,27 @@ export default function ZenjongCanvas({
     (env) => env.id === selectedMapId
   );
 
-  const cameraConfig = currentCameraPreset
-    ? CAMERA_PRESETS[currentCameraPreset] || { position: [0, 16, 18], fov: 50 }
-    : isDualCamera
-    ? { position: [0, 10, 0], left: -10, right: 10, top: 10, bottom: -10, near: 0.1, far: 100 }
-    : { position: [0, 5, 8], fov: 50 };
+  const preset = currentCameraPreset ?? (isDualCamera ? "TOP_DOWN" : "ISO_3D");
+  const cameraConfig = CAMERA_PRESETS[preset] ?? CAMERA_PRESETS.ISO_3D;
 
   if (!isClient) {
-    return <div className="w-full h-screen relative" />;
+    return <div className="w-full h-full relative" />;
   }
 
   return (
-    <div className="w-full h-screen relative">
+    <div className="w-full h-full relative">
       <Canvas
         ref={canvasRef}
-        camera={cameraConfig as any}
-        onCreated={({ gl }) => {
+        camera={cameraConfig}
+        onCreated={({ gl, camera }) => {
+          camera.lookAt(0, 0, 0);
           gl.setClearColor(
             theme ? parseInt(theme.palette.background.slice(1), 16) : 0x1a1a1a
           );
           gl.shadowMap.enabled = true;
           gl.shadowMap.type = THREE.PCFSoftShadowMap;
           gl.toneMapping = ACESFilmicToneMapping;
-          gl.toneMappingExposure = 1.2;
+          gl.toneMappingExposure = 1;
         }}
         gl={{ antialias: true }}
         dpr={[1, 2]}
@@ -307,24 +335,24 @@ export default function ZenjongCanvas({
       >
         <WebGLContextLossHandler onChange={setContextLost} />
         <CameraPresetHandler onCameraPresetChange={onCameraPresetChange} />
-        <TouchGestureHandler />
+        <CameraRig preset={preset} />
         {triggerShake && triggerShake > 0 && <ShakeEffect intensity={triggerShake} />}
 
-        <ambientLight intensity={0.3} />
-        <directionalLight position={[0, 12, 0]} intensity={1.8} castShadow shadow-mapSize-width={2048} shadow-mapSize-height={2048} shadow-camera-near={0.5} shadow-camera-far={50} shadow-camera-top={10} shadow-camera-bottom={-10} shadow-camera-left={-10} shadow-camera-right={10} shadow-bias={-0.0001} />
-        <directionalLight position={[5, 8, 5]} intensity={0.6} />
-        <directionalLight position={[-3, 6, -3]} intensity={0.4} color="#ffd700" />
+        <ambientLight intensity={0.45} />
+        <hemisphereLight args={["#e6eee8", "#24312a", 0.35]} />
+        <directionalLight position={[4, 12, 6]} intensity={1.1} castShadow shadow-mapSize={[2048, 2048]} shadow-camera-near={0.5} shadow-camera-far={50} shadow-camera-top={10} shadow-camera-bottom={-10} shadow-camera-left={-10} shadow-camera-right={10} shadow-bias={-0.0001} shadow-normalBias={0.025} shadow-radius={3} />
 
-        {theme && <EnvironmentStage theme={theme} />}
+        <ProceduralRoom theme={theme ?? ENVIRONMENTS[0]} />
 
-        <ContactShadows position={[0, -1.2, 0]} opacity={0.6} scale={20} blur={2} far={4} resolution={256} color="#000000" />
+        <mesh position={[0, -0.2, 0]} receiveShadow>
+          <boxGeometry args={[14, 0.4, 10]} />
+          <meshStandardMaterial color="#1b4d2e" roughness={0.95} metalness={0} />
+        </mesh>
 
         {theme && theme.hasFlames && (
           <>
-            <BrazierFlames position={[-1, -0.2, 0.8]} size={0.4} color={theme.palette.accent} />
-            <BrazierFlames position={[1, -0.2, 0.8]} size={0.4} color={theme.palette.accent} />
-            <BrazierFlames position={[-1, -0.2, -0.8]} size={0.4} color={theme.palette.accent} />
-            <BrazierFlames position={[1, -0.2, -0.8]} size={0.4} color={theme.palette.accent} />
+            <BrazierFlames position={[-8, 0, -4]} size={0.4} color={theme.palette.accent} />
+            <BrazierFlames position={[8, 0, -4]} size={0.4} color={theme.palette.accent} />
           </>
         )}
 
@@ -335,27 +363,38 @@ export default function ZenjongCanvas({
           </>
         )}
 
-        {theme && <AmbientParticles color={theme.palette.accent} count={150} radius={8} speed={0.3} size={0.1} />}
+        {theme && <AmbientParticles color={theme.palette.accent} count={40} radius={10} speed={0.15} size={0.04} />}
 
-        {validTiles.map((tileId, index) => {
-          const x = (index - (validTiles.length - 1) / 2) * 1.2;
+        {board?.map(tile => <MahjongTile key={tile.id}
+          position={[tile.x * 0.88, 0.25 + tile.layer * 0.52, tile.z * 1.16]}
+          rotation={[-Math.PI / 2, 0, 0]} tileId={tile.id} tileType={tile.face}
+          selected={selectedTiles.includes(tile.id)} backColor={backColor}
+          blocked={paused || !freeIds?.has(tile.id)} onClick={onTileClick} />)}
+        {board && <MatchReaction key={revision} tiles={reaction} />}
+        {!board && validTiles.map((tileId, index) => {
+          const x = (index - (validTiles.length - 1) / 2) * 0.88;
           const isSelected = selectedTiles.includes(tileId);
           return (
-            <MahjongTile key={tileId} position={[x, -2, 2]} rotation={[0, 0, 0]} tileId={tileId} tileType={getTileType(tileId)} selected={isSelected}
-              onClick={() => { if (isMyTurn) discardTile(tileId); else onTileClick(tileId); }}
+            <MahjongTile key={`${tileId}-${index}`} position={[x, 0.62, 4]} rotation={[-Math.PI / 8, 0, 0]} tileId={tileId} tileType={getTileType(tileId)} selected={isSelected}
+              onClick={() => { if (isMyTurn && isSelected) discardTile(tileId); else onTileClick(tileId); }}
               onHover={onTileHover} />
           );
         })}
 
         {validDiscards.map((tileId, index) => {
-          const x = (index - (validDiscards.length - 1) / 2) * 0.8;
+          // Twelve columns, five rows per tier keep even a long round on the felt.
+          const x = ((index % 12) - 5.5) * 0.88;
+          const z = (Math.floor(index / 12) % 5 - 2) * 1.18 - 0.5;
+          const y = 0.25 + Math.floor(index / 60) * 0.5;
           return (
-            <MahjongTile key={`discard-${tileId}-${index}`} position={[x, 0, -4]} rotation={[0, 0, 0]} tileId={tileId} tileType={getTileType(tileId)}
-              selected={selectedTiles.includes(tileId)} onClick={() => onTileClick(tileId)} onHover={onTileHover} />
+            <MahjongTile key={`discard-${tileId}-${index}`} position={[x, y, z]} rotation={[-Math.PI / 2, 0, 0]} tileId={tileId} tileType={getTileType(tileId)} />
           );
         })}
 
-        {!isDualCamera && <OrbitControls enableZoom={true} enablePan={true} />}
+        {children}
+        <OrbitControls makeDefault target={[0, 0, 0]} enableZoom enablePan={false}
+          enableRotate={!isDualCamera} minDistance={12} maxDistance={35}
+          minPolarAngle={0.01} maxPolarAngle={Math.PI / 2.5} />
 
         <PostProcessingEffects />
       </Canvas>

@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useRef, useMemo } from "react";
+import { useState, useRef, useMemo, useEffect } from "react";
 import { useFrame } from "@react-three/fiber";
-import { Mesh } from "three";
+import { Group, MathUtils } from "three";
+import { Edges } from "@react-three/drei";
 import * as THREE from "three";
 import { TileType, generateTileTexture, getTileBackTexture } from "../../lib/tileTextures";
-import { createBeveledBox } from "../../lib/beveledBox";
+import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 
 interface MahjongTileProps {
   position: [number, number, number];
@@ -14,6 +15,8 @@ interface MahjongTileProps {
   tileType?: TileType;
   faceUp?: boolean;
   selected?: boolean;
+  backColor?: string;
+  blocked?: boolean;
   onClick?: (tileId: string) => void;
   onHover?: (tileId: string, isHovering: boolean) => void;
 }
@@ -25,20 +28,20 @@ export default function MahjongTile({
   tileType = "DOT_1",
   faceUp = true,
   selected = false,
+  backColor = "#1f6e3a",
+  blocked = false,
   onClick,
   onHover,
 }: MahjongTileProps) {
-  const meshRef = useRef<Mesh>(null);
+  const meshRef = useRef<Group>(null);
   const [isHovered, setIsHovered] = useState(false);
-  const [isClicked, setIsClicked] = useState(false);
   const previousHoverState = useRef(false);
-  const baseY = position[1];
 
   // Memoize geometry and materials to avoid re-instantiation every frame
   // Chunky beveled 3D box geometry with chamfered edges
-  // Tile size per arcade spec: width 1.2, height 1.6, depth 0.5
+  // RoundedBox retains six material groups, valid face UVs and full tile depth.
   const geometry = useMemo(
-    () => createBeveledBox(1.2, 1.6, 0.5, 0.07, 1),
+    () => new RoundedBoxGeometry(0.8, 1.1, 0.5, 2, 0.04),
     []
   );
 
@@ -47,25 +50,27 @@ export default function MahjongTile({
     () =>
       new THREE.MeshPhysicalMaterial({
         map: faceUp ? generateTileTexture(tileType) : getTileBackTexture(),
-        roughness: 0.25,
-        metalness: 0.1,
+        color: faceUp ? "#ffffff" : backColor,
+        roughness: 0.5,
+        metalness: 0,
         clearcoat: 0.3,
         clearcoatRoughness: 0.2,
         emissive: selected
           ? new THREE.Color(0xffd700)
           : new THREE.Color(0x000000),
-        emissiveIntensity: selected ? 0.85 : 0.0,
+        emissiveIntensity: selected ? 0.08 : 0.0,
       }),
-    [tileType, faceUp, selected]
+    [tileType, faceUp, selected, backColor]
   );
 
   // Side material with ivory tone and gold edge glow
   const sideMaterial = useMemo(
     () =>
       new THREE.MeshPhysicalMaterial({
-        color: faceUp ? "#fdf6e3" : "#1f6e3a",
-        roughness: 0.25,
-        metalness: 0.1,
+        map: getTileBackTexture(),
+        color: backColor,
+        roughness: 0.55,
+        metalness: 0,
         clearcoat: 0.3,
         clearcoatRoughness: 0.2,
         emissive: selected
@@ -73,26 +78,20 @@ export default function MahjongTile({
           : new THREE.Color(0x000000),
         emissiveIntensity: selected ? 0.35 : 0.0,
       }),
-    [faceUp, selected]
+    [backColor, selected]
   );
 
+  useEffect(() => () => geometry.dispose(), [geometry]);
+  useEffect(() => () => frontMaterial.dispose(), [frontMaterial]);
+  useEffect(() => () => sideMaterial.dispose(), [sideMaterial]);
+
   // Animation effect for hover and click states - reuses Three.js vectors
-  useFrame(() => {
+  useFrame((_, delta) => {
     if (!meshRef.current) return;
 
-    const targetY = isHovered ? baseY + 0.35 : baseY;
-    const targetScale = isHovered ? 1.12 : 1.0;
-    const targetDepth = isClicked ? 0.12 : 0.1;
-
-    // Reuse meshRef properties directly to avoid allocations
-    meshRef.current.position.y += (targetY - meshRef.current.position.y) * 0.15;
-    meshRef.current.scale.x += (targetScale - meshRef.current.scale.x) * 0.15;
-    meshRef.current.scale.y += (targetScale - meshRef.current.scale.y) * 0.15;
-    meshRef.current.scale.z += (targetDepth - meshRef.current.scale.z) * 0.15;
-
-    // Smooth rotation animation
-    const targetRotX = isHovered ? 0.08 : 0;
-    meshRef.current.rotation.x += (targetRotX - meshRef.current.rotation.x) * 0.1;
+    // World-Y lift preserves the caller's rotation and never flattens the tile.
+    const targetY = selected && !blocked ? 0.3 : isHovered && !blocked ? 0.08 : 0;
+    meshRef.current.position.y = MathUtils.damp(meshRef.current.position.y, targetY, 14, delta);
 
     // Hover state change callback (only fires on transitions)
     if (isHovered !== previousHoverState.current) {
@@ -102,7 +101,6 @@ export default function MahjongTile({
   });
 
   const handleClick = () => {
-    setIsClicked(!isClicked);
     if (onClick) {
       onClick(tileId);
     }
@@ -110,24 +108,28 @@ export default function MahjongTile({
 
   const handlePointerOver = () => {
     setIsHovered(true);
-    document.body.style.cursor = "pointer";
   };
 
   const handlePointerOut = () => {
     setIsHovered(false);
-    document.body.style.cursor = "auto";
   };
 
   return (
+    <group position={position}>
+    <group ref={meshRef}>
     <mesh
-      ref={meshRef}
-      position={position}
       rotation={rotation}
       castShadow
       receiveShadow
-      onClick={handleClick}
-      onPointerOver={handlePointerOver}
-      onPointerOut={handlePointerOut}
+      onClick={onClick ? (event) => {
+        event.stopPropagation();
+        if (!blocked && event.delta <= 5) handleClick();
+      } : undefined}
+      onPointerOver={onClick ? (event) => {
+        event.stopPropagation();
+        if (!blocked) handlePointerOver();
+      } : undefined}
+      onPointerOut={onClick ? handlePointerOut : undefined}
     >
       <primitive attach="geometry" object={geometry} />
       <meshStandardMaterial
@@ -164,6 +166,9 @@ export default function MahjongTile({
       />
       <primitive attach="material-4" object={frontMaterial} />
       <primitive attach="material-5" object={sideMaterial} />
+      {selected && !blocked && <Edges scale={1.015} threshold={35} color="#ffe6a0" raycast={() => null} />}
     </mesh>
+    </group>
+    </group>
   );
 }

@@ -1,7 +1,5 @@
 "use client";
 
-import * as THREE from "three";
-import { useMemo } from "react";
 import { MapTheme } from "../../../lib/environments";
 
 interface EnvironmentStageProps {
@@ -18,21 +16,18 @@ export default function EnvironmentStage({ theme }: EnvironmentStageProps) {
       <directionalLight
         position={sunPosition}
         color={sunColor}
-        intensity={sunIntensity}
-        castShadow
-        shadow-mapSize-width={1024}
-        shadow-mapSize-height={1024}
+        intensity={sunIntensity * 0.25}
       />
 
       {tableType === "pagoda" && (
-        <mesh position={[0, -0.6, 0]} rotation={[-Math.PI / 2, 0, 0]} castShadow receiveShadow>
+        <mesh position={[0, -0.6, 0]} castShadow receiveShadow>
           <cylinderGeometry args={[1.5, 1.5, 0.1, 16]} />
           <meshStandardMaterial color={palette.table} roughness={0.6} metalness={0.2} />
         </mesh>
       )}
 
       {tableType === "stump" && (
-        <mesh position={[0, -0.6, 0]} rotation={[-Math.PI / 2, 0, 0]} castShadow receiveShadow>
+        <mesh position={[0, -0.6, 0]} castShadow receiveShadow>
           <cylinderGeometry args={[1.2, 1.2, 0.2, 8]} />
           <meshStandardMaterial color={palette.table} roughness={0.7} metalness={0.1} />
         </mesh>
@@ -65,8 +60,8 @@ export default function EnvironmentStage({ theme }: EnvironmentStageProps) {
         </>
       )}
 
-      <mesh position={[0, 0.5, 0]} rotation={[0, 0, 0]} receiveShadow>
-        <planeGeometry args={[20, 20]} />
+      <mesh position={[0, -0.65, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+        <planeGeometry args={[60, 60]} />
         <meshStandardMaterial color={palette.background} roughness={1} />
       </mesh>
     </>

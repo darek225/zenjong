@@ -1,193 +1,80 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import dynamic from "next/dynamic";
-
-const ZenjongCanvas = dynamic(() => import("./components/ZenjongCanvas"), { ssr: false });
 import GameHUD from "./components/GameHUD";
 import InventoryModal from "./components/InventoryModal";
 import MapSelector from "./components/MapSelector";
 import { useMahjongGame } from "../hooks/useMahjongGame";
+import type { OwnedItem } from "../lib/inventory";
 
-export interface PlayerInfo {
-  sessionId: string;
-  username: string;
-  score: number;
-  jadeBalance: number;
-  pearlBalance: number;
-  isCurrentTurn: boolean;
-  isMe: boolean;
-}
+const ZenjongCanvas = dynamic(() => import("./components/ZenjongCanvas"), { ssr: false });
 
 export default function Home() {
-  // Colyseus multiplayer state
-  const {
-    room,
-    gameState,
-    isConnected,
-    myTiles,
-    selectedTiles,
-    isMyTurn,
-    currentTurn,
-    turnTimeLeft,
-    discardPile,
-    toggleTileSelection,
-    sortTiles,
-    discardTile,
-    declareWin,
-  } = useMahjongGame();
-
-  const [hoveredTiles, setHoveredTiles] = useState<Set<string>>(new Set());
-  const [timeElapsed, setTimeElapsed] = useState(0);
-  const [gameOver, setGameOver] = useState(false);
-  const [remainingTiles, setRemainingTiles] = useState(144);
-  const [inventoryModalOpen, setInventoryModalOpen] = useState(false);
-  const [selectedMapId, setSelectedMapId] = useState<string>("temple_courtyard");
-  const [isDualCamera, setIsDualCamera] = useState(false);
-  const [mapSelectorOpen, setMapSelectorOpen] = useState(false);
-
-  // Derive score from game state (simplified)
-  const activeScore = room ? gameState?.players.get(room.sessionId)?.score ?? 0 : 0;
-
-  const handleTileClick = (tileId: string) => {
-    // Only allow discarding when it's the local player's turn
-    if (!isMyTurn) {
-      // Just select the tile for viewing, don't discard
-      toggleTileSelection(tileId);
-      return;
-    }
-    // Discard the tile via Colyseus
-    discardTile(tileId);
+  const [mode, setMode] = useState<"arcade" | "multiplayer">("arcade");
+  const game = useMahjongGame(mode);
+  const [inventoryOpen, setInventoryOpen] = useState(false);
+  const [mapOpen, setMapOpen] = useState(false);
+  const [selectedMapId, setSelectedMapId] = useState("classic_green");
+  const [topDown, setTopDown] = useState(false);
+  const [backColor, setBackColor] = useState("#1f6e3a");
+  const [avatar, setAvatar] = useState("Jade Scholar");
+  const arcade = mode === "arcade";
+  const won = arcade && game.solitaire.tiles.length === 0;
+  const players = Array.from(game.gameState?.players ?? []).map(([sessionId, player]) => ({
+    ...player, sessionId, isCurrentTurn: sessionId === game.currentTurn, isMe: sessionId === game.room?.sessionId,
+  }));
+  const equip = (item: OwnedItem) => {
+    if (item.item_type === "table_skin") setSelectedMapId(item.id);
+    if (item.item_type === "tileset") setBackColor(item.id === "default-obsidian" ? "#302922" : "#1f6e3a");
+    if (item.item_type === "avatar") setAvatar(item.name);
   };
-
-  const handleTileHover = (tileId: string, isHovering: boolean) => {
-    setHoveredTiles((prev) => {
-      const next = new Set(prev);
-      if (isHovering) {
-        next.add(tileId);
-      } else {
-        next.delete(tileId);
-      }
-      return next;
-    });
-  };
-
-  // Update remaining tiles from wall state
-  useEffect(() => {
-    if (gameState?.wall?.remaining !== undefined) {
-      setRemainingTiles(gameState.wall.remaining);
-    }
-  }, [gameState?.wall?.remaining]);
-
-  // Simple elapsed timer (client-side)
-  useEffect(() => {
-    if (!gameOver && remainingTiles > 0) {
-      const interval = setInterval(() => {
-        setTimeElapsed((prev) => prev + 1);
-      }, 1000);
-      return () => clearInterval(interval);
-    }
-  }, [gameOver, remainingTiles]);
-
-  const displayTimeRemaining = turnTimeLeft > 0 ? turnTimeLeft : Math.max(0, 300 - timeElapsed);
-
-  const handleUndo = () => {
-    // In multiplayer, undo is not typically allowed - just clear selection
-    if (selectedTiles.length > 0) {
-      selectedTiles.forEach((id) => toggleTileSelection(id));
-    }
-  };
-
-  const handleHint = () => {
-    alert("Hint: Look for matching pairs!");
-  };
-
-  const handleShuffle = () => {
-    // Reset (demo) - in multiplayer this would trigger a new round
-    setRemainingTiles(144);
-    setTimeElapsed(0);
-  };
-
-  const handleDeclareWin = () => {
-    declareWin();
-  };
-
-  // Build list of player info from gameState
-  const players: PlayerInfo[] = gameState
-    ? Array.from(
-        gameState.players.entries() as Iterable<[string, any]>
-      ).map(([sessionId, p]) => ({
-        sessionId,
-        username: p.username,
-        score: p.score,
-        jadeBalance: p.jadeBalance ?? 1000,
-        pearlBalance: p.pearlBalance ?? 100,
-        isCurrentTurn: sessionId === currentTurn,
-        isMe: sessionId === room?.sessionId,
-      }))
-    : [];
-
-  // Sort my tiles for display
-  const sortedMyTiles = sortTiles(myTiles);
-  
-  // Development fallback: generate mock tiles if not connected and no tiles from backend
-  const devMyTiles = isConnected ? sortedMyTiles : [
-    // Default 14 tiles for development when backend is unavailable
-    "DOT_1", "DOT_2", "DOT_3", "DOT_4", "DOT_5",
-    "BAM_1", "BAM_2", "BAM_3", "BAM_4", "BAM_5",
-    "WIND_EAST", "WIND_SOUTH", "WIND_WEST", "WIND_NORTH",
-  ];
-
-  return (
-    <main className="relative min-h-screen bg-gray-900 text-white p-4 overflow-hidden">
-      <h1 className="text-2xl font-bold text-center mb-6">
-        Project Zenjong - Multiplayer Mahjong
-      </h1>
-      <div className="relative">
-        <div className="w-full h-[600px] min-h-[500px] relative border border-gray-700 rounded-lg overflow-hidden">
-          <ZenjongCanvas
-            myTiles={devMyTiles}
-            discardPile={discardPile}
-            selectedTiles={selectedTiles}
-            onTileClick={handleTileClick}
-            onTileHover={handleTileHover}
-            isMyTurn={isMyTurn}
-            discardTile={discardTile}
-            selectedMapId={selectedMapId}
-            isDualCamera={isDualCamera}
-          />
+  return <main className="min-h-screen bg-slate-950 text-white">
+    <header className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+      <h1 className="text-lg font-semibold tracking-widest text-amber-100">ZENJONG <span className="text-xs tracking-normal text-white/50">· {avatar}</span></h1>
+      <nav aria-label="Game mode" className="flex gap-2 text-sm">
+        <button className="rounded border border-white/20 px-3 py-2" aria-pressed={arcade} onClick={() => setMode("arcade")}>Solitaire</button>
+        <button className="rounded border border-white/20 px-3 py-2" aria-pressed={!arcade} onClick={() => setMode("multiplayer")}>Multiplayer</button>
+      </nav>
+    </header>
+    <section aria-label="Mahjong table" className="relative h-[calc(100dvh-5rem)] min-h-[650px]">
+      <ZenjongCanvas myTiles={game.myTiles} discardPile={arcade ? [] : game.discardPile}
+        selectedTiles={game.selectedTiles} onTileClick={game.toggleTileSelection} onTileHover={() => {}}
+        isMyTurn={!arcade && game.isMyTurn} discardTile={game.discardTile}
+        selectedMapId={selectedMapId} isDualCamera={topDown}
+        board={arcade ? game.solitaire.tiles : undefined} freeIds={game.freeIds}
+        reaction={game.solitaire.reaction} revision={game.solitaire.revision}
+        paused={game.paused || inventoryOpen || mapOpen} backColor={backColor} />
+      <GameHUD hudState="IN_GAME" gameMode={mode} isConnected={game.isConnected}
+        remainingTiles={arcade ? game.solitaire.tiles.length : game.gameState?.wall.remaining ?? 0}
+        activeScore={arcade ? game.solitaire.score : players.find(player => player.isMe)?.score ?? 0}
+        timeRemaining={game.elapsed} combo={game.solitaire.combo} pairsRemaining={game.solitaire.tiles.length / 2}
+        arcadeActionsEnabled={arcade && !game.paused && !won}
+        onUndo={game.undo} onHint={game.hint} onShuffle={game.shuffle}
+        onDeclareWin={game.declareWin} onOpenInventory={() => setInventoryOpen(true)}
+        players={players} currentTurn={game.currentTurn} turnTimeLeft={game.turnTimeLeft} isMyTurn={game.isMyTurn}
+        selectedMapId={selectedMapId} onSelectMap={setSelectedMapId} onToggleCamera={() => setTopDown(value => !value)}
+        mapSelectorOpen={mapOpen} onOpenMapSelector={() => setMapOpen(true)} onCloseMapSelector={() => setMapOpen(false)}
+        onStartGame={arcade ? game.newGame : undefined} paused={game.paused}
+        onTogglePause={arcade ? () => game.setPaused(value => !value) : undefined} />
+      {arcade && (won || game.paused || !game.hasMoves) && <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center">
+        <div role="status" className="pointer-events-auto max-w-sm rounded-2xl border border-amber-200/40 bg-slate-950/95 p-6 text-center shadow-xl">
+          <h2 className="mb-2 text-2xl text-amber-100">{won ? "Table cleared" : game.paused ? "Take a breath" : "No free pairs"}</h2>
+          <p className="mb-4 text-sm text-white/70">{won ? `72 pairs · ${game.solitaire.score.toLocaleString()} points` : game.paused ? "Your hand is waiting." : "Shuffle the remaining tiles or undo your last move."}</p>
+          <button className="rounded-lg bg-emerald-800 px-4 py-2" onClick={won ? game.newGame : game.paused ? () => game.setPaused(false) : game.shuffle}>
+            {won ? "New hand" : game.paused ? "Resume" : "Shuffle"}
+          </button>
+          {!won && !game.paused && <button className="ml-2 rounded-lg border border-white/20 px-4 py-2" onClick={game.undo}>Undo</button>}
         </div>
-
-        {/* Game HUD Overlay */}
-        <GameHUD
-          hudState="IN_GAME"
-          remainingTiles={remainingTiles}
-          activeScore={activeScore}
-          timeRemaining={displayTimeRemaining}
-          isConnected={isConnected}
-          onUndo={handleUndo}
-          onHint={handleHint}
-          onShuffle={handleShuffle}
-          onDeclareWin={handleDeclareWin}
-          onOpenInventory={() => setInventoryModalOpen(true)}
-          players={players}
-          currentTurn={currentTurn}
-          turnTimeLeft={turnTimeLeft}
-          isMyTurn={isMyTurn}
-          selectedMapId={selectedMapId}
-          onSelectMap={setSelectedMapId}
-          onToggleCamera={() => setIsDualCamera((prev) => !prev)}
-          mapSelectorOpen={mapSelectorOpen}
-          onOpenMapSelector={() => setMapSelectorOpen(true)}
-          onCloseMapSelector={() => setMapSelectorOpen(false)}
-        />
-        <InventoryModal
-          isOpen={inventoryModalOpen}
-          onClose={() => setInventoryModalOpen(false)}
-          userId={room?.sessionId ?? "guest"}
-          purchaseRefreshKey={0}
-        />
-      </div>
-    </main>
-  );
+      </div>}
+      {!arcade && !game.isConnected && <p role="status" className="absolute bottom-16 left-1/2 z-20 -translate-x-1/2 rounded-lg bg-slate-950/90 p-3 text-center text-sm">Connecting to multiplayer. Solitaire is available without a server.</p>}
+    </section>
+    <MapSelector isOpen={mapOpen} onClose={() => setMapOpen(false)} selectedMapId={selectedMapId} onSelectMap={setSelectedMapId} />
+    <InventoryModal isOpen={inventoryOpen} onClose={() => setInventoryOpen(false)} userId={game.room?.sessionId ?? "guest"}
+      onEquip={equip} onUnequip={item => {
+        if (item.item_type === "tileset") setBackColor("#1f6e3a");
+        if (item.item_type === "table_skin") setSelectedMapId("classic_green");
+        if (item.item_type === "avatar") setAvatar("Guest");
+      }} />
+  </main>;
 }

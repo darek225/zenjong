@@ -1,12 +1,24 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useReducer, useMemo } from "react";
+import { createSolitaire, solitaireReducer, findPair, isFree } from "../lib/solitaire";
 import type { Room } from "colyseus.js";
 import { createColyseusClient, joinRoomWithRetry, leaveRoomSafely } from "../lib/colyseus";
 import { getWebSocketUrl, recordConnectionError } from "../lib/config";
 import { GameSnapshot, snapshotGameState, sortTileIds } from "../lib/networkState";
 
-export const useMahjongGame = () => {
+export const useMahjongGame = (mode: "arcade" | "multiplayer" = "arcade") => {
+  const [solitaire, dispatch] = useReducer(solitaireReducer, 1, createSolitaire);
+  const [elapsed, setElapsed] = useState(0);
+  const [paused, setPaused] = useState(false);
+  const freeIds = useMemo(() => new Set(solitaire.tiles.filter(tile => isFree(tile, solitaire.tiles)).map(tile => tile.id)), [solitaire.tiles]);
+  const hasMoves = useMemo(() => !!findPair(solitaire.tiles), [solitaire.tiles]);
+  useEffect(() => { dispatch({ type: "new", seed: Date.now() }); }, []);
+  useEffect(() => {
+    if (mode !== "arcade" || paused || !solitaire.tiles.length) return;
+    const timer = setInterval(() => setElapsed(value => value + 1), 1000);
+    return () => clearInterval(timer);
+  }, [mode, paused, solitaire.tiles.length]);
   const [room, setRoom] = useState<Room | null>(null);
   const [gameState, setGameState] = useState<GameSnapshot | null>(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -14,6 +26,7 @@ export const useMahjongGame = () => {
   const roomRef = useRef<Room | null>(null);
 
   useEffect(() => {
+    if (mode !== "multiplayer") return;
     const controller = new AbortController();
     let activeRoom: Room | null = null;
     const unsubscribers: (() => void)[] = [];
@@ -69,8 +82,9 @@ export const useMahjongGame = () => {
       unsubscribers.forEach(unsubscribe => unsubscribe());
       if (roomRef.current === activeRoom) roomRef.current = null;
       void leaveRoomSafely(activeRoom);
+      reset();
     };
-  }, []);
+  }, [mode]);
 
   const myPlayer = room ? gameState?.players.get(room.sessionId) : undefined;
   const myTiles = myPlayer?.hand.map(tile => tile.id) ?? [];
@@ -82,6 +96,10 @@ export const useMahjongGame = () => {
     [id, { jadeBalance: player.jadeBalance, pearlBalance: player.pearlBalance }]));
 
   const toggleTileSelection = (tileId: string) => {
+    if (mode === "arcade") {
+      if (!paused) dispatch({ type: "select", id: tileId, now: Date.now() });
+      return;
+    }
     setSelectedTiles(previous => previous.includes(tileId)
       ? previous.filter(id => id !== tileId) : [...previous, tileId]);
   };
@@ -108,11 +126,18 @@ export const useMahjongGame = () => {
     setSelectedTiles(previous => previous.filter(id => id !== tileId));
   };
   return {
-    room, gameState, isConnected, myTiles, selectedTiles, isMyTurn, currentTurn,
+    room, gameState, isConnected, myTiles,
+    selectedTiles: mode === "arcade" ? [solitaire.selected, ...solitaire.hint].filter((id): id is string => !!id) : selectedTiles,
+    isMyTurn, currentTurn,
     turnTimeLeft, discardPile, playerBalances, toggleTileSelection, sortTiles: sortTileIds,
     drawTile: () => { if (isMyTurn) send("draw"); },
     discardTile,
     discardTiles: () => { if (selectedTiles[0]) discardTile(selectedTiles[0]); },
     declareWin: () => { if (isMyTurn) send("declare_win"); },
+    solitaire, freeIds, hasMoves, elapsed, paused, setPaused,
+    undo: () => { if (!paused) dispatch({ type: "undo" }); },
+    hint: () => { if (!paused) dispatch({ type: "hint" }); },
+    shuffle: () => { if (!paused) dispatch({ type: "shuffle", seed: Date.now() }); },
+    newGame: () => { dispatch({ type: "new", seed: Date.now() }); setElapsed(0); setPaused(false); },
   };
 };

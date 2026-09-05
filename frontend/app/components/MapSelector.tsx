@@ -24,7 +24,7 @@ export default function MapSelector({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm fade-in">
-      <div className="glass-panel rounded-2xl shadow-2xl w-full max-w-3xl p-8 scale-in">
+      <div className="glass-panel rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90dvh] overflow-y-auto p-5 scale-in">
         <div className="flex items-center justify-between mb-6">
           <h2 className="arcade-title text-3xl">SELECT ENVIRONMENT</h2>
           <button onClick={onClose} className="text-yellow-300/70 hover:text-yellow-300 text-3xl leading-none font-bold">

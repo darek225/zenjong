@@ -26,6 +26,20 @@ export type MapTheme = {
 
 export const ENVIRONMENTS: MapTheme[] = [
   {
+    id: "classic_green", name: "Jade Lantern Pavilion",
+    description: "Warm lanterns, grained wooden floors and ivory screens around classic green felt.",
+    palette: { primary: "#e6d3a7", secondary: "#8b7156", accent: "#e9bc70", background: "#625348", table: "#513325" },
+    ambientColor: "#fff1d6", sunColor: "#fff1d6", sunIntensity: 0.8, sunPosition: [5, 10, 5],
+    tableColor: "#1b4d2e", tableType: "pagoda", fogColor: "#625348", fogIntensity: 0.02, hasProps: true,
+  },
+  {
+    id: "cyberpunk", name: "Neon Skyline Lounge",
+    description: "Brushed metal decking, cyan light columns and luminous architectural screens.",
+    palette: { primary: "#55eaff", secondary: "#697b94", accent: "#55eaff", background: "#173044", table: "#223442" },
+    ambientColor: "#a4dfff", sunColor: "#c4eaff", sunIntensity: 0.8, sunPosition: [5, 10, 5],
+    tableColor: "#1b4d2e", tableType: "parlor", fogColor: "#173044", fogIntensity: 0.02, hasProps: true,
+  },
+  {
     id: "temple_courtyard",
     name: "Ancient Temple Courtyard",
     description: "A serene marble courtyard surrounded by ancient pagoda pillars and drifting incense.",
