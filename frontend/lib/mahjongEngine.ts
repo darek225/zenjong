@@ -41,7 +41,12 @@ export class MahjongEngine {
   private claimTimestamps: Map<string, number> = new Map();
 
   initializeBoard(initialTiles: MahjongTile[]): void {
-    this.tiles = initialTiles.map((tile) => ({
+    // Defensive: filter out null/undefined entries before mapping to prevent
+    // `Cannot read properties of null` errors during board reset.
+    const safeTiles = (initialTiles ?? []).filter(
+      (tile): tile is MahjongTile => tile !== null && tile !== undefined
+    );
+    this.tiles = safeTiles.map((tile) => ({
       ...tile,
       claimedBy: null,
       selectionSource: 'local',
@@ -146,14 +151,19 @@ export class MahjongEngine {
   }
 
   shuffleBoard(triggeredBy: PlayerRole, source: MatchEventSource = 'LOCAL_CLICK'): BoardShuffleEvent {
-    const unmatched = this.tiles.filter((t) => !t.isMatched);
+    // Defensive: filter out null/undefined entries before shuffle to prevent
+    // `Cannot read properties of null` during board shuffle operations.
+    const safeTiles = (this.tiles ?? []).filter(
+      (t): t is MahjongTile => t !== null && t !== undefined
+    );
+    const unmatched = safeTiles.filter((t) => !t.isMatched);
     for (let i = unmatched.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [unmatched[i], unmatched[j]] = [unmatched[j], unmatched[i]];
     }
 
     let unmatchedIdx = 0;
-    this.tiles = this.tiles.map((t) => {
+    this.tiles = safeTiles.map((t) => {
       if (t.isMatched) return t;
       return { ...unmatched[unmatchedIdx++], claimedBy: null, isHighlighted: false, selectionSource: 'local' };
     });
@@ -167,7 +177,10 @@ export class MahjongEngine {
   }
 
   handleRemoteShuffle(event: BoardShuffleEvent): void {
-    this.tiles = event.newBoard.map((t) => ({
+    const safeBoard = (event.newBoard ?? []).filter(
+      (t): t is MahjongTile => t !== null && t !== undefined
+    );
+    this.tiles = safeBoard.map((t) => ({
       ...t,
       claimedBy: null,
       isHighlighted: false,
@@ -176,7 +189,7 @@ export class MahjongEngine {
   }
 
   hasValidMoves(): boolean {
-    const unmatched = this.tiles.filter((t) => !t.isMatched);
+    const unmatched = (this.tiles ?? []).filter((t): t is MahjongTile => t !== null && t !== undefined && !t.isMatched);
     for (let i = 0; i < unmatched.length; i++) {
       for (let j = i + 1; j < unmatched.length; j++) {
         if (this.areTilesMatching(unmatched[i], unmatched[j])) {
@@ -188,7 +201,7 @@ export class MahjongEngine {
   }
 
   getRemainingCount(): number {
-    return this.tiles.filter((t) => !t.isMatched).length;
+    return (this.tiles ?? []).filter((t): t is MahjongTile => t !== null && t !== undefined && !t.isMatched).length;
   }
 
   reset(): void {

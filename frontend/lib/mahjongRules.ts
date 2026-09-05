@@ -24,29 +24,31 @@ export interface Tile {
  * A tile's top is blocked if another tile is positioned directly above it
  */
 export function isTopUnblocked(tile: Tile, allTiles: Tile[]): boolean {
+  if (!tile || !tile.position) return true;
   const tilePos = tile.position;
   const tolerance = 0.5; // Distance threshold to detect overlap
-  
-  for (const otherTile of allTiles) {
-    if (otherTile.id === tile.id) continue;
-    
+
+  for (const otherTile of (allTiles ?? [])) {
+    if (!otherTile || otherTile.id === tile.id) continue;
+    if (!otherTile.position) continue;
+
     const otherPos = otherTile.position;
     const otherRot = otherTile.rotation || new Vector3(0, 0, 0);
-    
+
     // Check if another tile is above this tile (y position higher)
     const yDiff = otherPos.y - tilePos.y;
-    
+
     // Tile is considered on top if it's within tolerance above and within x-z bounds
     if (yDiff > 0 && yDiff < 0.8) {
       const xDiff = Math.abs(otherPos.x - tilePos.x);
       const zDiff = Math.abs(otherPos.z - tilePos.z);
-      
+
       if (xDiff < 0.6 && zDiff < 0.6) {
         return false;
       }
     }
   }
-  
+
   return true;
 }
 
@@ -55,37 +57,39 @@ export function isTopUnblocked(tile: Tile, allTiles: Tile[]): boolean {
  * Left side is defined as the negative X direction relative to tile orientation
  */
 export function isLeftSideFree(tile: Tile, allTiles: Tile[]): boolean {
+  if (!tile || !tile.position) return true;
   const tilePos = tile.position;
   const tileRot = tile.rotation || new Vector3(0, 0, 0);
   const tileWidth = 1;
   const tolerance = 0.5;
-  
+
   // Check tiles to the left (negative X in tile's local space)
-  for (const otherTile of allTiles) {
-    if (otherTile.id === tile.id) continue;
+  for (const otherTile of (allTiles ?? [])) {
+    if (!otherTile || otherTile.id === tile.id) continue;
+    if (!otherTile.position) continue;
     if (!isTopUnblocked(otherTile, allTiles)) continue; // Only check tiles not blocked on top
-    
+
     const otherPos = otherTile.position;
     const otherRot = otherTile.rotation || new Vector3(0, 0, 0);
-    
+
     // Calculate relative position in tile's local coordinate system
     const deltaX = otherPos.x - tilePos.x;
     const deltaZ = otherPos.z - tilePos.z;
     const deltaY = otherPos.y - tilePos.y;
-    
+
     // Project onto tile's left direction (negative X axis after rotation)
     const cosY = Math.cos(tileRot.y);
     const sinY = Math.sin(tileRot.y);
-    
+
     const localLeft = deltaX * (-cosY) + deltaZ * sinY;
     const localRight = deltaX * cosY - deltaZ * sinY;
-    
+
     // Check if tile is to the left and adjacent
     if (localLeft > 0 && localLeft < tileWidth + tolerance && Math.abs(deltaY) < 0.3) {
       return false;
     }
   }
-  
+
   return true;
 }
 
@@ -94,33 +98,35 @@ export function isLeftSideFree(tile: Tile, allTiles: Tile[]): boolean {
  * Right side is defined as the positive X direction relative to tile orientation
  */
 export function isRightSideFree(tile: Tile, allTiles: Tile[]): boolean {
+  if (!tile || !tile.position) return true;
   const tilePos = tile.position;
   const tileRot = tile.rotation || new Vector3(0, 0, 0);
   const tileWidth = 1;
   const tolerance = 0.5;
-  
+
   // Check tiles to the right (positive X in tile's local space)
-  for (const otherTile of allTiles) {
-    if (otherTile.id === tile.id) continue;
+  for (const otherTile of (allTiles ?? [])) {
+    if (!otherTile || otherTile.id === tile.id) continue;
+    if (!otherTile.position) continue;
     if (!isTopUnblocked(otherTile, allTiles)) continue; // Only check tiles not blocked on top
-    
+
     const otherPos = otherTile.position;
     const deltaX = otherPos.x - tilePos.x;
     const deltaZ = otherPos.z - tilePos.z;
     const deltaY = otherPos.y - tilePos.y;
-    
+
     // Project onto tile's right direction (positive X axis after rotation)
     const cosY = Math.cos(tileRot.y);
     const sinY = Math.sin(tileRot.y);
-    
+
     const localRight = deltaX * cosY + deltaZ * (-sinY);
-    
+
     // Check if tile is to the right and adjacent
     if (localRight > 0 && localRight < tileWidth + tolerance && Math.abs(deltaY) < 0.3) {
       return false;
     }
   }
-  
+
   return true;
 }
 
@@ -169,9 +175,17 @@ export function isTileFree(
 
 /**
  * Get all tiles that are currently free to be selected
+ * Defensive: filters out null/undefined entries before calling isTileFree
  */
 export function getFreeTiles(allTiles: Tile[], tileMap?: Map<string, Tile>): Tile[] {
-  return allTiles.filter(tile => isTileFree(tile.id, allTiles, tileMap));
+  // Defensive: filter null/undefined entries to prevent .reduce/.filter crashes
+  const safeTiles = (allTiles ?? []).filter(
+    (tile): tile is Tile => tile !== null && tile !== undefined
+  );
+  return safeTiles.filter((tile) => {
+    if (!tile || !tile.id) return false;
+    return isTileFree(tile.id, safeTiles, tileMap);
+  });
 }
 
 /**
@@ -185,9 +199,15 @@ export function isValidTilePair(
   tileMap?: Map<string, Tile>
 ): boolean {
   if (tileId1 === tileId2) return false;
-  
-  const tile1Free = isTileFree(tileId1, allTiles, tileMap);
-  const tile2Free = isTileFree(tileId2, allTiles, tileMap);
-  
+  if (!tileId1 || !tileId2) return false;
+
+  // Defensive: filter null/undefined entries before isTileFree
+  const safeTiles = (allTiles ?? []).filter(
+    (tile): tile is Tile => tile !== null && tile !== undefined
+  );
+
+  const tile1Free = isTileFree(tileId1, safeTiles, tileMap);
+  const tile2Free = isTileFree(tileId2, safeTiles, tileMap);
+
   return tile1Free && tile2Free;
 }
